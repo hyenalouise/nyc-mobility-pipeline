@@ -65,11 +65,12 @@ Its workspace path is:
 The proposed schemas are:
 
 ```text
-`ftw-week-08`.`control`
-`ftw-week-08`.`bronze`
-`ftw-week-08`.`silver`
-`ftw-week-08`.`gold`
-`ftw-week-08`.`analytics`
+`ftw-week-08`.`00-source`
+`ftw-week-08`.`01-bronze`
+`ftw-week-08`.`02-silver`
+`ftw-week-08`.`03-gold`
+`ftw-week-08`.`04-analytics`
+`ftw-week-08`.`05-control`
 ```
 
 The `control` schema will be created or verified by Issue #5 after Issue #3 is approved.
@@ -108,7 +109,7 @@ Example:
 
 ```sql
 SELECT *
-FROM `ftw-week-08`.`bronze`.`green_taxi_raw`;
+FROM `ftw-week-08`.`01-bronze`.`green_taxi_raw`;
 ```
 
 The catalog and schema names containing hyphens must be enclosed in backticks.
@@ -122,18 +123,18 @@ Always inspect the actual upstream table and column names before referencing the
 ### Control
 
 ```text
-`ftw-week-08`.`control`.`pipeline_runs`
-`ftw-week-08`.`control`.`ingestion_batches`
-`ftw-week-08`.`control`.`data_quality_results`
+`ftw-week-08`.`05-control`.`pipeline_runs`
+`ftw-week-08`.`05-control`.`ingestion_batches`
+`ftw-week-08`.`05-control`.`data_quality_results`
 ```
 
 ### Bronze
 
 ```text
-`ftw-week-08`.`bronze`.`green_taxi_raw`
-`ftw-week-08`.`bronze`.`open_meteo_weather_raw`
-`ftw-week-08`.`bronze`.`taxi_zones_raw`
-`ftw-week-08`.`bronze`.`dot_advisories_raw`
+`ftw-week-08`.`01-bronze`.`green_taxi_raw`
+`ftw-week-08`.`01-bronze`.`open_meteo_weather_raw`
+`ftw-week-08`.`01-bronze`.`taxi_zones_raw`
+`ftw-week-08`.`01-bronze`.`dot_advisories_raw`
 ```
 
 The DOT advisory table is optional.
@@ -141,9 +142,9 @@ The DOT advisory table is optional.
 ### Silver
 
 ```text
-`ftw-week-08`.`silver`.`green_taxi_trips`
-`ftw-week-08`.`silver`.`weather_hourly`
-`ftw-week-08`.`silver`.`taxi_zones`
+`ftw-week-08`.`02-silver`.`green_taxi_trips`
+`ftw-week-08`.`02-silver`.`weather_hourly`
+`ftw-week-08`.`02-silver`.`taxi_zones`
 ```
 
 ### Gold and Analytics
