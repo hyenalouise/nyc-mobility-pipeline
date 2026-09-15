@@ -14,6 +14,7 @@ Record problem, decision, reason, rejected alternative, assumption, consequence,
 | D06 | One representative NYC weather location initially | Maintainability once business scope accepts city-level approximation | Cannot claim zone-specific observed weather | Proposed |
 | D07 | No SCD Type 2 for zones initially | Maintainability; no agreed question requires historical zone labels | Pin raw snapshot for reproducibility | Proposed |
 | D08 | One branch/work item and reviewer | Reliability and maintainability of shared changes | Separate developer outputs from integration targets | Proposed |
+| D09 | Request and store weather in UTC at Bronze; convert to America/New_York in Silver | Correctness/reliability: keeps Bronze source-faithful and unmodified per `docs/architecture.md`, and avoids depending on Open-Meteo's own timezone-localization behavior, which was not verified to be DST-aware per hour across the profiled window | Silver-layer conversion must use a DST-aware IANA timezone conversion (`America/New_York`), never a fixed `-4`/`-5` hour offset, given the confirmed March 8, 2026 spring-forward transition inside the March-May 2026 window; taxi's timezone still needs empirical confirmation for Issue #16 before the join logic is finalized | Proposed |
 
 Whenever a decision changes, update the relevant canonical documents in the same PR and explicitly identify any remaining stale documents. This log explains choices; detailed implementation contracts live in ingestion/model/architecture documents.
 
@@ -46,3 +47,16 @@ Gold and Analytics names remain pending Issue #17 and the approved business-ques
 Alternative rejected: storing operational state in Bronze. This would mix pipeline-control records with source-preserving business data.
 
 Assumption: the processing schemas are dedicated to Group A. If other groups share them, the namespace strategy must be revised before tables are created.
+
+## Weather and taxi timezone standard
+
+Status: Proposed for Issue #16  
+Decision date: `Sep 15 2026`
+
+Weather data is requested and stored in UTC at Bronze, matching Open-Meteo's default request behavior and the already-profiled evidence in `docs/source_profile.md` (`utc_offset_seconds: 0`, `timezone`/`timezone_abbreviation`: `GMT`/`GMT`). Conversion to `America/New_York` happens explicitly and only in Silver, using a real DST-aware timezone conversion, before joining weather hours to taxi trips by pickup hour.
+
+Alternative rejected: requesting Open-Meteo data pre-localized to `America/New_York` via the API's own `timezone` request parameter. This was tested directly and does return a response with `utc_offset_seconds: -14400` / `timezone_abbreviation: GMT-4`, so the parameter is real and accepted. It was rejected anyway for two reasons: whether the API applies true per-hour DST-aware conversion across a multi-month window (rather than one flat current offset) was not confirmed before this decision was made, and pushing a standardization/reporting concern into the Bronze ingestion request conflicts with Bronze's role of preserving the source's own representation as received, per `docs/architecture.md`.
+
+Assumption: taxi (`lpep_pickup_datetime`/`lpep_dropoff_datetime`) timestamps are already recorded in `America/New_York` local time. This still requires empirical confirmation via the DST-transition check tracked under Issue #16 before the join logic below is treated as final. If taxi timestamps turn out to be UTC instead, both weather and taxi receive the same Silver-layer conversion, not just weather.
+
+Consequence: any Silver transformation touching `weather_hourly.time` must convert it using a real IANA timezone library, correctly handling the March 8, 2026 spring-forward boundary inside the profiled window — a naive fixed-offset conversion would misjoin every weather-to-trip pairing on one side of that boundary by exactly one hour. A worked 2am example spanning that boundary must be included in the same PR that implements this conversion, per Issue #16's acceptance evidence.
