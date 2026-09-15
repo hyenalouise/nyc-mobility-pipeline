@@ -332,3 +332,148 @@ The source-profile exit gate passes only when the owner and reviewer agree on:
 - Evidence locations
 
 Any unresolved issue affecting correctness blocks dependent transformations.
+
+## NYC DOT Traffic Advisory Feasibility Check
+
+The NYC DOT Traffic Advisory was evaluated as a potential bonus source for traffic closure and event information. This source has not yet been added to the finalized source inventory because the team has not made a final decision on bonus-source inclusion.
+
+### Source Inventory
+
+| Source | URL | Format | Coverage | Structure | Status | Evidence |
+|---|---|---|---|---|---|---|
+| Weekly Traffic Advisory | https://www.nyc.gov/html/dot/html/motorist/weektraf.shtml | HTML | Saturday–Friday | Semi-structured HTML | Profiled | 2026-09-14 HTML snapshot |
+| Weekend Traffic Advisory | https://www.nyc.gov/html/dot/html/motorist/wkndtraf.shtml | HTML | Friday–Sunday | Semi-structured HTML | Profiled | 2026-09-14 HTML snapshot |
+
+### API / Download Alternative Check
+
+NYC DOT provides transportation data through its data feeds and NYC Open Data.
+
+Historical NYC Open Data entries were identified for:
+
+- Weekend Traffic Updates
+- Special Traffic Updates
+
+These entries were last updated in October 2024 and point to NYC DOT traffic advisory pages rather than providing a current machine-readable equivalent of the live 2026 advisory.
+
+No suitable current machine-readable API or downloadable structured equivalent was identified during the feasibility check.
+
+**Result:** HTML scraping is considered a reasonable fallback if the source is implemented.
+
+### HTML Structure Assessment
+
+#### Weekly Traffic Advisory
+
+The Weekly Traffic Advisory is organized into geographic sections such as:
+
+- East River Bridge Crossings
+- Manhattan
+- Bronx
+- Brooklyn
+- Queens
+- Cross-borough advisories
+
+Individual advisories use more than one HTML pattern. Common patterns include:
+
+- `<h3>Location</h3>` followed by `<p>` description
+- `<strong>Location</strong>` followed by `<p>` description
+
+Events use additional fields such as:
+
+- Event name
+- Location(s)
+- Formation
+- Route
+- Dispersal
+
+Dates and times are generally embedded in natural-language descriptions rather than consistently provided as separate fields.
+
+#### Weekend Traffic Advisory
+
+The Weekend Traffic Advisory is organized into sections such as:
+
+- Bronx
+- Brooklyn
+- Manhattan
+- Manhattan/Brooklyn
+- Queens
+- Queens/Brooklyn
+- Staten Island
+- Citywide
+
+Ordinary closure advisories commonly use a `<strong>` location followed by a `<p>` description.
+
+Events contain identifiable fields such as event name, location(s), formation, route, and dispersal.
+
+### Data Identifiability
+
+| Attribute | Identifiable? | Notes |
+|---|---|---|
+| Advisory period | Yes | Stated in page heading |
+| Geographic area | Yes | Organized by borough/area sections |
+| Location | Yes | Usually identifiable from headings or bold text |
+| Closure description | Yes | Provided in paragraph text |
+| Closure date/time | Yes | Usually embedded in natural-language text |
+| Closure type/reason | Often | Requires text parsing |
+| Event name | Yes | Identifiable for event sections |
+| Event location | Yes | Identifiable |
+| Formation | Yes, for applicable events | Structured label |
+| Route | Yes, for applicable events | Structured label |
+| Dispersal | Yes, for applicable events | Structured label |
+| Source URL | Yes | Can be stored with each retrieval |
+| Retrieval timestamp | Yes | Should be added during ingestion |
+
+### Structure Finding
+
+The DOT advisories are **semi-structured HTML** rather than a clean tabular dataset.
+
+The main concern is that individual advisories do not follow one consistent HTML pattern. A scraper relying on a single CSS selector or tag would risk silently missing records when the page uses another structure.
+
+Dates and times also require additional parsing because they are frequently embedded in natural-language descriptions.
+
+### Duplicate and Overlap Considerations
+
+The Weekly Advisory covers Saturday–Friday, while the Weekend Advisory covers Friday–Sunday. These periods overlap.
+
+Implementing both sources could therefore result in duplicate or overlapping advisories.
+
+If the DOT source is implemented, the **Weekend Traffic Advisory is the preferred starting point** because it has a narrower coverage period and a somewhat more manageable scope.
+
+### Maintenance Risks
+
+Potential scraper breakage includes:
+
+1. HTML tags or CSS structure changing.
+2. Advisory content moving to different sections.
+3. New HTML patterns being introduced for individual closures.
+4. Event fields changing structure.
+5. Date/time wording changing.
+6. New sections or geographic categories being added.
+
+A scraper should therefore preserve the raw HTML/text and retrieval timestamp so that parsing results can be audited and reprocessed if the page structure changes.
+
+### Feasibility Assessment
+
+| Criterion | Finding |
+|---|---|
+| Official/public source | Pass |
+| Current information | Pass |
+| Geographic information identifiable | Pass |
+| Individual advisories identifiable | Pass, with multiple patterns |
+| Consistent HTML structure | Partial |
+| Data richness | High |
+| Parsing complexity | Medium–High |
+| Maintenance risk | Medium–High |
+| Current machine-readable equivalent | Not identified |
+| Overall feasibility | Feasible with caveats |
+
+### Recommendation
+
+**BUILD — NYC DOT Weekend Traffic Advisory**, if the team proceeds with the bonus source.
+
+The source provides useful information about temporary road closures, construction, events, and traffic disruptions that could add context to the NYC Mobility Pipeline.
+
+However, the HTML is semi-structured and would require multiple parsing rules. The scraper should not rely on a single HTML selector, and raw source content should be preserved for auditability and future parser changes.
+
+The Weekend Advisory is recommended over the Weekly Advisory because its Friday–Sunday scope is narrower and somewhat easier to manage. The overlap between the two advisory periods should also be considered to avoid duplicate records.
+
+**No scraper is being built as part of this feasibility-check issue.**
