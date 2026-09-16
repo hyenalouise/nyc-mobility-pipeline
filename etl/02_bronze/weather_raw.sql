@@ -1,7 +1,6 @@
 -- Bronze landing for the Open-Meteo historical weather source.
 
 CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.weather_raw (
-    -- Raw value as returned when requested with timezone=UTC (per D09).
     observation_timestamp_utc TIMESTAMP,
     temperature_2m DOUBLE,
     precipitation_mm DOUBLE,
@@ -17,6 +16,7 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.weather_raw (
     utc_offset_seconds INT,
     timezone STRING,
     timezone_abbreviation STRING,
+    source_system STRING,
     source_url STRING,
     source_file STRING,
     source_file_version STRING,
@@ -24,38 +24,95 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.weather_raw (
     ingested_at TIMESTAMP
 );
 
-INSERT INTO `ftw-week-08`.`01-bronze`.weather_raw
-SELECT
-    CAST(exploded.observation_time AS TIMESTAMP)   AS observation_timestamp_utc,
-    hourly.temperature_2m[exploded.pos]             AS temperature_2m,
-    hourly.precipitation[exploded.pos]              AS precipitation_mm,
-    CAST(hourly.weather_code[exploded.pos] AS INT)  AS weather_code,
-    CAST(40.7128 AS DOUBLE)  AS requested_latitude,
-    CAST(-74.0060 AS DOUBLE) AS requested_longitude,
-    '2026-03-01' AS requested_start_date,
-    '2026-05-31' AS requested_end_date,
-    'era5' AS weather_model,
-    latitude               AS returned_latitude,
-    longitude              AS returned_longitude,
-    elevation              AS elevation_m,
-    CAST(utc_offset_seconds AS INT) AS utc_offset_seconds,
-    timezone,
-    timezone_abbreviation,
-    'https://archive-api.open-meteo.com/v1/archive' AS source_url,
-    'open_meteo_mar_may_2026_sample.json' AS source_file,
-    'archive_api_v1' AS source_file_version,
-    format_string('%s', date_format(current_date(), 'yyyyMMdd')) AS batch_id,
-    current_timestamp() AS ingested_at
-FROM read_files(
-    '/Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026_sample.json',
-    format => 'json',
-    multiLine => true
-)
-LATERAL VIEW POSEXPLODE(hourly.time) exploded AS pos, observation_time;
+-- INCREMENTAL / IDEMPOTENT MERGE
+-- Reads JSON directly from Volume. Business key: (observation_timestamp_utc, returned_latitude,
+-- returned_longitude, weather_model) — returned coordinates identify the actual grid-snapped
+-- weather location, not just the input request. Repeating the same date range adds zero rows.
+MERGE INTO `ftw-week-08`.`01-bronze`.weather_raw AS target
+USING (
+    SELECT
+        CAST(exploded.observation_time AS TIMESTAMP)   AS observation_timestamp_utc,
+        hourly.temperature_2m[exploded.pos]             AS temperature_2m,
+        hourly.precipitation[exploded.pos]              AS precipitation_mm,
+        CAST(hourly.weather_code[exploded.pos] AS INT)  AS weather_code,
+        CAST(40.7128 AS DOUBLE)  AS requested_latitude,
+        CAST(-74.0060 AS DOUBLE) AS requested_longitude,
+        '2026-03-01' AS requested_start_date,
+        '2026-05-31' AS requested_end_date,
+        'era5' AS weather_model,
+        latitude               AS returned_latitude,
+        longitude              AS returned_longitude,
+        elevation              AS elevation_m,
+        CAST(utc_offset_seconds AS INT) AS utc_offset_seconds,
+        timezone,
+        timezone_abbreviation,
+        'open_meteo' AS source_system,
+        'https://archive-api.open-meteo.com/v1/archive' AS source_url,
+        'open_meteo_mar_may_2026.json' AS source_file,
+        -- TODO: source_file_version is a static placeholder; notebook computes real SHA-256.
+        -- For production, pass checksum via metadata table or compute in SQL.
+        'archive_api_v1' AS source_file_version,
+        format_string('%s', date_format(current_date(), 'yyyyMMdd')) AS batch_id,
+        current_timestamp() AS ingested_at
+    FROM read_files(
+        '/Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json',
+        format => 'json',
+        multiLine => true
+    )
+    LATERAL VIEW POSEXPLODE(hourly.time) exploded AS pos, observation_time
+) AS source
+ON target.observation_timestamp_utc = source.observation_timestamp_utc
+   AND target.returned_latitude = source.returned_latitude
+   AND target.returned_longitude = source.returned_longitude
+   AND target.weather_model = source.weather_model
+WHEN NOT MATCHED THEN
+    INSERT (
+        observation_timestamp_utc,
+        temperature_2m,
+        precipitation_mm,
+        weather_code,
+        requested_latitude,
+        requested_longitude,
+        requested_start_date,
+        requested_end_date,
+        weather_model,
+        returned_latitude,
+        returned_longitude,
+        elevation_m,
+        utc_offset_seconds,
+        timezone,
+        timezone_abbreviation,
+        source_system,
+        source_url,
+        source_file,
+        source_file_version,
+        batch_id,
+        ingested_at
+    )
+    VALUES (
+        source.observation_timestamp_utc,
+        source.temperature_2m,
+        source.precipitation_mm,
+        source.weather_code,
+        source.requested_latitude,
+        source.requested_longitude,
+        source.requested_start_date,
+        source.requested_end_date,
+        source.weather_model,
+        source.returned_latitude,
+        source.returned_longitude,
+        source.elevation_m,
+        source.utc_offset_seconds,
+        source.timezone,
+        source.timezone_abbreviation,
+        source.source_system,
+        source.source_url,
+        source.source_file,
+        source.source_file_version,
+        source.batch_id,
+        source.ingested_at
+    );
 
--- Row-count sanity check against the landed response, mirroring the
--- notebook's own expected-vs-actual hourly-coverage check
--- (docs/source_profile.md: 2,208 expected rows for the full March-May
--- window, 92 days x 24 hours, 0 gaps).
--- SELECT COUNT(*) FROM `ftw-week-08`.`01-bronze`.weather_raw
--- WHERE batch_id = '20260916';
+-- Row-count sanity check against the landed response, mirroring the notebook's own expected-vs-actual hourly-coverage check (docs/source_profile.md: 2,208 expected rows for the full March-May window, 92 days x 24 hours, 0 gaps).
+SELECT COUNT(*) FROM `ftw-week-08`.`01-bronze`.weather_raw
+WHERE batch_id = date_format(current_date(), 'yyyyMMdd');
