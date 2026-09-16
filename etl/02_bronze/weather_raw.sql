@@ -44,7 +44,7 @@ SELECT
     'https://archive-api.open-meteo.com/v1/archive' AS source_url,
     'open_meteo_mar_may_2026_sample.json' AS source_file,
     'archive_api_v1' AS source_file_version,
-    CAST(NULL AS STRING) AS batch_id,
+    format_string('%s', date_format(current_date(), 'yyyyMMdd')) AS batch_id,
     current_timestamp() AS ingested_at
 FROM read_files(
     '/Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026_sample.json',
