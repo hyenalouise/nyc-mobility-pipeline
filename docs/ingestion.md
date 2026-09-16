@@ -34,6 +34,43 @@ Keep input identity separate from execution attempts. Proposed manifest fields: 
 
 Skip only completed work for the applicable layer and code/configuration version. Bronze success must not skip a failed Silver step. A code change may require an explicit replay even if the source checksum is unchanged.
 
+## Taxi Zones ingestion
+
+Source:
+- taxi_zone_lookup.csv
+
+Source path:
+- /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+
+Target table:
+- `ftw-week-08`.`01-bronze`.`taxi_zones_raw`
+
+Load strategy:
+- Full refresh
+
+Reason:
+
+The Taxi Zones dataset is a small static reference dataset containing 265 rows and is delivered as a complete snapshot rather than a stream of transactions.
+
+A full refresh is intentionally chosen because:
+
+1. The complete dataset is available in a single file.
+2. The dataset is small and inexpensive to reload.
+3. Full refresh is simpler to validate and maintain than row-level incremental logic.
+4. Incremental processing would add unnecessary complexity without providing meaningful benefits.
+5. Rerunning the load produces the same row count and content.
+
+Validation:
+
+- Expected row count: 265
+- LocationID must be unique
+- No duplicate LocationID values
+- Source metadata retained
+
+Rerun behaviour:
+
+Running the same load multiple times produces the same row count and business content without creating duplicate records.
+
 ## Failures and recovery
 
 Download to staging; check status, completeness, parsability and contract; preserve immutable raw inputs; validate before publishing layer output. Mark a layer complete only after its corresponding commit and required checks succeed. Use atomic publication supported by the chosen table/storage system; confirm exact behavior before implementation. If a commit succeeds but its checkpoint fails, a retry must recognize or safely replay the same commit without duplication. Use one coordinated shared writer or explicit concurrency protection.
