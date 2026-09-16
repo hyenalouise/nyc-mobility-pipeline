@@ -15,7 +15,7 @@ Record problem, decision, reason, rejected alternative, assumption, consequence,
 | D07 | No SCD Type 2 for zones initially | Maintainability; no agreed question requires historical zone labels | Pin raw snapshot for reproducibility | Proposed |
 | D08 | One branch/work item and reviewer | Reliability and maintainability of shared changes | Separate developer outputs from integration targets | Proposed |
 | D09 | Request and store weather in UTC at Bronze; convert to America/New_York in Silver | Correctness/reliability: keeps Bronze source-faithful and unmodified per `docs/architecture.md`, and avoids depending on Open-Meteo's own timezone-localization behavior, which was not verified to be DST-aware per hour across the profiled window | Silver-layer conversion must use a DST-aware IANA timezone conversion (`America/New_York`), never a fixed `-4`/`-5` hour offset, given the confirmed March 8, 2026 spring-forward transition inside the March-May 2026 window; taxi's timezone still needs empirical confirmation for Issue #16 before the join logic is finalized | Proposed |
-| D10 | Preserve each validated Taxi Zones snapshot in Bronze and full-refresh the selected Silver reference table | Correctness and traceability require Bronze to retain every received CSV snapshot using its checksum and retrieval timestamp. Full refresh is appropriate for the small, static 265-row Silver reference table. Rejected alternative: incremental row-level updates in Silver, which would add unnecessary complexity for a snapshot-based lookup dataset. Rejected alternative: replacing the Bronze table, which would remove historical source snapshots and provenance. | Bronze ingestion must be idempotent by skipping a snapshot whose checksum has already been successfully loaded. When a new validated checksum arrives, preserve it as another Bronze snapshot and rebuild the selected Silver table from that approved snapshot. Rerunning the same snapshot must not change the Bronze row count or content. | Proposed for Issue #22 |
+| D10 | Use a full-refresh strategy for the Taxi Zones reference dataset | The Taxi Zones source is a small static reference snapshot (265 rows) delivered as a complete lookup file rather than a transactional or append-only dataset. Full refresh provides deterministic rerun behavior and avoids unnecessary incremental logic, snapshot tracking, and merge complexity. Rejected alternative: incremental row-level processing for a static lookup table. | Rerunning the same source produces the same row count and business content. When a newer approved Taxi Zones snapshot is selected, the table is rebuilt from that complete snapshot. | Proposed for Issue #22 |
 
 Whenever a decision changes, update the relevant canonical documents in the same PR and explicitly identify any remaining stale documents. This log explains choices; detailed implementation contracts live in ingestion/model/architecture documents.
 
@@ -61,93 +61,57 @@ Alternative rejected: requesting Open-Meteo data pre-localized to `America/New_Y
 Assumption: taxi (`lpep_pickup_datetime`/`lpep_dropoff_datetime`) timestamps are already recorded in `America/New_York` local time. This still requires empirical confirmation via the DST-transition check tracked under Issue #16 before the join logic below is treated as final. If taxi timestamps turn out to be UTC instead, both weather and taxi receive the same Silver-layer conversion, not just weather.
 
 Consequence: any Silver transformation touching `weather_hourly.time` must convert it using a real IANA timezone library, correctly handling the March 8, 2026 spring-forward boundary inside the profiled window — a naive fixed-offset conversion would misjoin every weather-to-trip pairing on one side of that boundary by exactly one hour. A worked 2am example spanning that boundary must be included in the same PR that implements this conversion, per Issue #16's acceptance evidence.
-## Taxi Zones snapshot ingestion and Silver full refresh
+## Taxi Zones full-refresh ingestion
 
 Status: Proposed for Issue #22  
 Decision date: `Sep 16 2026`
 
-Every received and validated Taxi Zones CSV snapshot is preserved in Bronze with its source filename, immutable content checksum, retrieval timestamp, batch identifier, and ingestion timestamp.
+The Taxi Zones dataset is a small static reference lookup containing 265 rows and delivered as a complete source snapshot.
+
+The Bronze Taxi Zones table uses a full-refresh strategy implemented with `CREATE OR REPLACE TABLE`.
 
 The source snapshot is loaded into:
 
 `ftw-week-08`.`01-bronze`.`taxi_zones_raw`
 
-Bronze does not overwrite previously accepted snapshots. Before inserting a source file, the ingestion process checks whether the same content checksum has already been successfully loaded. If the checksum already exists, the rerun is treated as a no-op.
-
-When a new validated Taxi Zones snapshot is received, the snapshot is added to Bronze and becomes eligible for selection by the downstream Silver process.
-
-The selected Silver Taxi Zones reference table uses a full-refresh strategy. The table is rebuilt from one approved Bronze snapshot rather than updated through row-level incremental logic.
-
 ### Reason
 
-The Taxi Zones source is a small reference snapshot containing 265 rows. It represents a complete lookup dataset rather than a stream of independent transactional records.
+The Taxi Zones source is a complete lookup dataset rather than a stream of independent transactional records.
 
-A full refresh is appropriate for the selected Silver reference table because:
+A full refresh is intentionally chosen because:
 
-1. The source provides a complete snapshot.
-2. The table is small enough to rebuild efficiently.
-3. Replacing the selected reference state is easier to validate than applying row-level changes.
-4. The approach avoids unnecessary `MERGE` logic for individual zone records.
-5. Bronze still preserves the complete history of received snapshots for reproducibility and audit purposes.
+1. The complete dataset is available in a single source file.
+2. The dataset is small and inexpensive to reload.
+3. Full refresh produces deterministic rerun behavior.
+4. Replacing the dataset is easier to validate than implementing row-level change tracking.
+5. Incremental processing would add unnecessary complexity without providing meaningful performance benefits.
 
-### Rejected alternative: incremental Silver updates
+### Rerun behavior
 
-Using row-level incremental inserts or updates was rejected because the source is delivered as a complete reference snapshot.
+Rerunning ingestion against the same Taxi Zones source file produces:
 
-An incremental approach would require additional logic to identify inserted, changed, and removed reference rows. This would add complexity without providing a meaningful benefit for a 265-row lookup dataset.
+- The same row count.
+- The same business content.
+- No duplicate records.
 
-### Rejected alternative: replacing the Bronze table
+This satisfies the project requirement that rerunning the same input produces identical results.
 
-Using `CREATE OR REPLACE TABLE` directly on the Bronze table was rejected because it would remove previously received source snapshots.
+### Rejected alternative: incremental processing
 
-That approach would conflict with the requirement to preserve each source version using its checksum and retrieval timestamp. Bronze must retain source history, while Silver represents the currently selected validated snapshot.
+Using `INSERT INTO`, `MERGE`, or similar row-level incremental logic was rejected because Taxi Zones is not an append-only transactional source.
 
-### Idempotency rule
+An incremental approach would require additional logic to identify inserts, updates, deletes, checksum management, and snapshot version tracking. For a static 265-row reference lookup table, this complexity provides little benefit.
 
-A snapshot is identified by its content checksum.
+### Rejected alternative: COPY INTO
 
-Rerunning ingestion with the same source checksum must:
+`COPY INTO` is appropriate for sources that arrive incrementally as new files, such as the monthly Green Taxi Parquet extracts.
 
-- Insert zero additional Bronze rows.
-- Preserve the existing Bronze row count.
-- Preserve the existing business content.
-- Record no duplicate successful snapshot contribution.
-
-A new checksum represents a new source version and may be loaded as a separate Bronze snapshot after validation.
-
-### Provenance fields
-
-Each Bronze row must retain enough metadata to identify its source snapshot:
-
-- `source_file`
-- `source_file_version`
-- `content_sha256`
-- `retrieved_at`
-- `batch_id`
-- `run_id`
-- `ingested_at`
-
-The source `LocationID`, `Borough`, `Zone`, and `service_zone` values must remain traceable to the snapshot from which they were read.
-
-### Silver refresh rule
-
-The selected Silver Taxi Zones table is rebuilt only when a new validated snapshot is approved.
-
-The Silver refresh must:
-
-1. Select one approved Bronze snapshot.
-2. Validate that the snapshot contains the expected schema.
-3. Confirm that `LocationID` is non-null and unique.
-4. Replace the complete Silver reference table from that snapshot.
-5. Confirm that the Silver output contains the expected row count.
-6. Preserve the selected source checksum or source version for lineage.
+Taxi Zones is currently a single reference CSV snapshot rather than a continuously arriving dataset. Using `COPY INTO` would not eliminate the need for additional snapshot-management logic and would not provide meaningful advantages over a deterministic full refresh.
 
 ### Consequences
 
-- Bronze retains every accepted source snapshot.
-- Silver contains only the currently selected reference state.
-- The same snapshot cannot contribute duplicate Bronze rows on rerun.
-- A new validated snapshot can replace the selected Silver state without deleting Bronze history.
-- Historical source versions remain available for reproduction and investigation.
-- The pipeline avoids unnecessary row-level incremental complexity for a small static lookup table.
-``
+- The Taxi Zones reference table can be rebuilt deterministically.
+- Rerunning ingestion is safe and repeatable.
+- Duplicate records are not introduced during reruns.
+- Implementation complexity is minimized for a small static lookup dataset.
+- Future ingestion logic can be revisited if the source begins publishing versioned or incremental snapshots.
