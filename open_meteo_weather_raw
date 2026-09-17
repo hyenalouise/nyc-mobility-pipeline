@@ -1,6 +1,6 @@
 -- Bronze landing for the Open-Meteo historical weather source.
 
-CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.weather_raw (
+CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.open_meteo_weather_raw (
     observation_timestamp_utc TIMESTAMP,
     temperature_2m DOUBLE,
     precipitation_mm DOUBLE,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-bronze`.weather_raw (
 -- Reads JSON directly from Volume. Business key: (observation_timestamp_utc, returned_latitude,
 -- returned_longitude, weather_model) — returned coordinates identify the actual grid-snapped
 -- weather location, not just the input request. Repeating the same date range adds zero rows.
-MERGE INTO `ftw-week-08`.`01-bronze`.weather_raw AS target
+MERGE INTO `ftw-week-08`.`01-bronze`.open_meteo_weather_raw AS target
 USING (
     SELECT
         CAST(exploded.observation_time AS TIMESTAMP)   AS observation_timestamp_utc,
