@@ -2,7 +2,7 @@ This document defines each source, ingestion method, incremental signal, batch i
 
 # Sources and ingestion contracts
 
-Status: proposed, source payloads not yet acquired or validated.
+Status: all three sources profiled (see `docs/source_profile.md`). Ingestion contracts below are approved; no source has completed official Bronze ingestion yet. Earlier loads into personal dev/sandbox schemas were exploratory profiling, not Bronze (D14).
 
 ## Official sources
 
@@ -40,7 +40,7 @@ Source:
 - taxi_zone_lookup.csv
 
 Target table:
-- `ftw-week-08`.`01-bronze`.`taxi_zones_raw`
+- `ftw-week-08`.`02-bronze`.`taxi_zones_raw`
 
 Load strategy:
 - Full refresh (`CREATE OR REPLACE TABLE`)
@@ -65,6 +65,8 @@ Rerunning the same source file produces:
 - No duplicate business records.
 
 Operational metadata such as `ingested_at` is expected to change between runs because it records the timestamp of the ingestion execution.
+
+Provenance columns (`batch_id`, `source_file_version`, `content_sha256`) are supplied by `src/ingestion/batch_tracking.register_batch_discovered()` and passed into the Bronze SQL as parameters. They are never written as literals, so the row-level stamp and `01-control`.`ingestion_batches` always describe the same batch.
 
 Validation:
 

@@ -22,10 +22,89 @@ def get_schema_fingerprint(spark, file_path):
     return hashlib.sha256(schema_str.encode("utf-8")).hexdigest()
 
 
-def register_batch_discovered(
-    spark, dbutils, file_path, source_system, source_period, table=DEFAULT_TABLE
+def _successful_versions(spark, table, source_system, source_period):
+    """Return (content_sha256, source_version_id) for every SUCCESS batch of this period.
+
+    An empty list means either nothing has succeeded yet or the control table does
+    not exist yet. Any other failure is re-raised rather than swallowed.
+    """
+    query = f"""
+        SELECT DISTINCT content_sha256, source_version_id
+        FROM {table}
+        WHERE source_system = :source_system
+          AND source_period = :source_period
+          AND status = 'SUCCESS'
+    """
+    try:
+        rows = spark.sql(
+            query,
+            args={"source_system": source_system, "source_period": source_period},
+        ).collect()
+    except Exception as exc:  # noqa: BLE001 - narrowed by the check below
+        if "TABLE_OR_VIEW_NOT_FOUND" in str(exc).upper():
+            return []
+        raise
+    return [(row["content_sha256"], row["source_version_id"]) for row in rows]
+
+
+def resolve_source_version_id(
+    spark, table, source_system, source_period, content_hash, source_version_label=None
 ):
-    """Register a new batch as DISCOVERED. Returns the generated batch_id."""
+    """Decide the source_version_id for a batch, refusing to reuse one silently.
+
+    D14 states that the version suffix is incremented by a person who has confirmed a
+    genuine content change. Defaulting to `_v1` unconditionally would let a revised
+    file for an already-processed period land under the same source_version_id as the
+    original, which makes D04's "replace the prior contribution for that logical
+    source batch" ambiguous: two different contents, one version identity.
+
+    Re-registering identical content is allowed and keeps its existing label.
+    """
+    recorded = _successful_versions(spark, table, source_system, source_period)
+    conflicting = sorted({version for digest, version in recorded if digest != content_hash})
+
+    if conflicting and source_version_label is None:
+        raise ValueError(
+            f"Content change detected for {source_system} {source_period}. "
+            f"Already recorded SUCCESS under {conflicting} with a different "
+            f"content_sha256; this file hashes to {content_hash}. "
+            "Confirm the revision, then pass an explicit source_version_label "
+            "(for example "
+            f"'{source_system}_{source_period}_v2') and follow D04 for replacing "
+            "the prior contribution."
+        )
+
+    if source_version_label is not None:
+        clashing = [
+            digest
+            for digest, version in recorded
+            if version == source_version_label and digest != content_hash
+        ]
+        if clashing:
+            raise ValueError(
+                f"source_version_label '{source_version_label}' is already recorded "
+                f"SUCCESS against a different content_sha256 ({clashing[0]}). "
+                "Choose a new label rather than reusing an existing version identity."
+            )
+        return source_version_label
+
+    return f"{source_system}_{source_period}_v1"
+
+
+def register_batch_discovered(
+    spark,
+    dbutils,
+    file_path,
+    source_system,
+    source_period,
+    table=DEFAULT_TABLE,
+    source_version_label=None,
+):
+    """Register a new batch as DISCOVERED. Returns the generated batch_id.
+
+    Raises ValueError if this period already succeeded under a different
+    content_sha256 and no explicit source_version_label is supplied.
+    """
     import uuid
     from pyspark.sql import Row
     from pyspark.sql.types import (
@@ -37,7 +116,9 @@ def register_batch_discovered(
     batch_id = str(uuid.uuid4())
     content_hash = hash_file(file_path)
     schema_fingerprint = get_schema_fingerprint(spark, file_path)
-    source_version_id = f"{source_system}_{source_period}_v1"
+    source_version_id = resolve_source_version_id(
+        spark, table, source_system, source_period, content_hash, source_version_label
+    )
 
     schema = StructType([
         StructField("batch_id", StringType(), True),

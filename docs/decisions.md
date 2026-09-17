@@ -421,6 +421,25 @@ rather than overwriting it.
 incremented by a person who has confirmed a genuine content change for an
 already-processed period, not auto-incremented.
 
+Because the suffix is human-assigned, `register_batch_discovered` refuses to
+assign one silently. `resolve_source_version_id` compares the incoming
+`content_sha256` against every `SUCCESS` batch already recorded for the same
+`(source_system, source_period)`:
+
+- No prior success, or identical content re-discovered: the default
+  `_v1` label is used.
+- Different content for an already-processed period: the call raises, naming
+  the recorded version and both hashes, until a person passes an explicit
+  `source_version_label`.
+- A label already recorded against different content: the call raises rather
+  than reusing an existing version identity.
+
+Without this, a revised April file would register under the same
+`source_version_id` as the original, leaving D04's "replace the prior
+contribution for that logical source batch" ambiguous — two different contents
+under one version identity. Covered by
+`tests/test_batch_tracking_version_guard.py`.
+
 
 **Files:**
 
