@@ -52,6 +52,69 @@ Rules for good data are source-specific. How results are recorded and judged is 
 - **Lineage:** each result row records `batch_id` or `source_version_id` and `code_revision`, so it can be traced to the data and code it checked.
 - **Reconciliation** (row counts and at least one measure against the source) is a `FAIL`-severity check inside the gate, not a separate query outside it.
 
+## Integration join coverage (#37)
+
+Stage 04 resolves each accepted trip to its pickup zone, its drop-off zone and its
+pickup-hour weather observation. Both maps are keyed on `trip_hash` and hold
+exactly one row per accepted trip, so neither can change the trip grain.
+
+Measured on the full three-month load, 133,353 accepted trips.
+
+### Zone resolution
+
+| Pickup status | Drop-off status | Trips |
+|---|---|---:|
+| `matched_regular` | `matched_regular` | 131,073 |
+| `matched_regular` | `matched_special` | 1,836 |
+| `matched_special` | `matched_special` | 355 |
+| `matched_special` | `matched_regular` | 89 |
+| **Total** | | **133,353** |
+
+Per role:
+
+| Role | `matched_regular` | `matched_special` | `unmatched_location_id` | `missing_source_id` |
+|---|---:|---:|---:|---:|
+| Pickup | 132,909 | 444 | **0** | **0** |
+| Drop-off | 131,162 | 2,191 | **0** | **0** |
+
+Every trip resolved. `matched_special` is LocationID 264 (unknown) or 265 (outside
+NYC), which D16 treats as explicit members rather than failures — counted
+separately so that "resolved to a sentinel" is never mistaken for "resolved to a
+real zone". Drop-offs land on a sentinel about five times as often as pickups,
+which is what you would expect: people are taken outside the city more often than
+they are collected from there.
+
+### Weather resolution
+
+| Status | Trips |
+|---|---:|
+| `matched_unique` | 133,173 |
+| `no_match` | 180 |
+| `ambiguous_match` | **0** |
+| **Total** | **133,353** |
+
+The 180 unmatched are the request-window boundary, not a join defect: 175 are late
+on 2026-05-31 and 11 fall outside the reporting period entirely. Recorded as D20,
+with the denominator carried into every weather measure.
+
+**Zero ambiguous matches** is the one that blocks. A trip matching more than one
+weather hour cannot be published, because choosing between them would be
+arbitrary.
+
+### How the joins are constrained
+
+| Requirement | How it holds |
+|---|---|
+| Pickup and drop-off roles stay separate | Two independent status columns; the two roles are never summed into one figure |
+| Weather uses the pickup hour, DST-aware | `convert_timezone('America/New_York', 'UTC', pickup)` truncated to the hour (D09, D23) |
+| `LEFT JOIN` for nullable relationships | Both zone joins and the weather join; an unresolved row survives with a status rather than disappearing |
+| Unmatched counted before a join type is chosen | Recorded as `INFO` measurements in the Integration gate, not as failures |
+| No unintended fan-out | Each map's row count is compared to `green_taxi_clean` and `trip_hash` uniqueness is asserted; the weather match is aggregated per trip so a multi-hour match cannot multiply rows |
+| Counts reconcile | Key sets compared in both directions: every trip has a map row, and no map row lacks a trip |
+| Unknown members handled per the star schema | 264 and 265 resolve to `matched_special`; a null weather key is left null rather than pointing at an invented member |
+| Facts resolve keys only against built dimensions | Gold reads Silver `green_taxi_clean` for trip **measures** and resolves `zone_key` against `dim_taxi_zone`; no dimension is joined from Silver once the Gold dimension exists |
+| Deterministic and rerunnable | `INSERT OVERWRITE` with no generated identifiers in either map; the same input produces the same output |
+
 ## Required evidence by layer
 
 | Layer | Required evidence |
