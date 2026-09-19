@@ -19,6 +19,17 @@ SET VARIABLE dq_run_id = uuid();
 DECLARE OR REPLACE VARIABLE code_revision STRING;
 SET VARIABLE code_revision = 'UNSET';
 
+-- Ownership is reference data, not code. It lives in gate_owners so that
+-- reassigning an owner is an UPDATE, not a code change plus a review and a
+-- deploy. NULL until that table is populated -- honestly unknown beats a
+-- name checked into source that nobody remembers to change.
+DECLARE OR REPLACE VARIABLE gate_owner STRING;
+SET VARIABLE gate_owner = (
+    SELECT owner
+    FROM `ftw-week-08`.`01-control`.gate_owners
+    WHERE layer = 'control' AND dataset = 'ingestion_batches'
+);
+
 -- A batch still DISCOVERED or STARTED after this many hours is abandoned,
 -- not in flight. Sized to be longer than the slowest expected load, not
 -- tuned to any observed run.
@@ -26,7 +37,7 @@ DECLARE OR REPLACE VARIABLE stuck_after_hours INT;
 SET VARIABLE stuck_after_hours = 6;
 
 INSERT INTO `ftw-week-08`.`01-control`.pipeline_runs
-SELECT dq_run_id, code_revision, 'manual', current_timestamp(), NULL, 'STARTED';
+SELECT dq_run_id, code_revision, current_user(), current_timestamp(), NULL, 'STARTED';
 
 
 -- ------------------------------------------------------------
@@ -189,7 +200,7 @@ SELECT
     NULL,              -- batch_id: this gate checks the whole table, not one batch
     NULL,              -- source_version_id: same
     code_revision,
-    'TODO',            -- owner
+    gate_owner,        -- owner
     NULL,              -- evidence_location
     details
 FROM checks;

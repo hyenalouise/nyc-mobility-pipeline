@@ -564,11 +564,19 @@ SELECT
         ELSE checks.fail_count * 100.0 / checks.total_count
     END AS fail_pct,
     checks.threshold_pct,
-    'ina' AS owner,
+    owners.owner AS owner,
     checks.details,
     'etl/05_gold/90_validate_gold.sql' AS evidence_location
 FROM gold_validation_checks AS checks
-CROSS JOIN gold_validation_context AS context;
+CROSS JOIN gold_validation_context AS context
+-- GROUP BY guarantees at most one row per dataset, so a duplicate
+-- owner row cannot fan out the results.
+LEFT JOIN (
+    SELECT dataset, MAX(owner) AS owner
+    FROM `ftw-week-08`.`01-control`.gate_owners
+    WHERE layer = 'gold'
+    GROUP BY dataset
+) AS owners ON owners.dataset = checks.dataset;
 
 SELECT
     dataset,

@@ -21,6 +21,17 @@ SET VARIABLE dq_run_id = uuid();
 DECLARE OR REPLACE VARIABLE code_revision STRING;
 SET VARIABLE code_revision = 'UNSET';
 
+-- Ownership is reference data, not code. It lives in gate_owners so that
+-- reassigning an owner is an UPDATE, not a code change plus a review and a
+-- deploy. NULL until that table is populated -- honestly unknown beats a
+-- name checked into source that nobody remembers to change.
+DECLARE OR REPLACE VARIABLE gate_owner STRING;
+SET VARIABLE gate_owner = (
+    SELECT owner
+    FROM `ftw-week-08`.`01-control`.gate_owners
+    WHERE layer = 'bronze' AND dataset = 'green_taxi'
+);
+
 
 -- Independent re-read of the landing folder, for source -> Bronze
 -- reconciliation. Counts and the fare total come from the files
@@ -326,7 +337,7 @@ SELECT
     NULL,                 -- batch_id: this gate checks the table as a whole
     NULL,                 -- source_version_id: same
     code_revision,
-    'TODO',               -- owner
+    gate_owner,           -- owner
     NULL,                 -- evidence_location
     details
 FROM checks;

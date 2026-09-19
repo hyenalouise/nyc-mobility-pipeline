@@ -22,6 +22,17 @@ SET VARIABLE dq_run_id = uuid();
 DECLARE OR REPLACE VARIABLE code_revision STRING;
 SET VARIABLE code_revision = 'UNSET';
 
+-- Ownership is reference data, not code. It lives in gate_owners so that
+-- reassigning an owner is an UPDATE, not a code change plus a review and a
+-- deploy. NULL until that table is populated -- honestly unknown beats a
+-- name checked into source that nobody remembers to change.
+DECLARE OR REPLACE VARIABLE gate_owner STRING;
+SET VARIABLE gate_owner = (
+    SELECT owner
+    FROM `ftw-week-08`.`01-control`.gate_owners
+    WHERE layer = 'silver' AND dataset = 'green_taxi'
+);
+
 
 INSERT INTO `ftw-week-08`.`01-control`.data_quality_results
 
@@ -393,7 +404,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    gate_owner,
     NULL,
     details
 FROM checks;

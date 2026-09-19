@@ -21,6 +21,17 @@ SET VARIABLE dq_run_id = uuid();
 DECLARE OR REPLACE VARIABLE code_revision STRING;
 SET VARIABLE code_revision = 'UNSET';
 
+-- Ownership is reference data, not code. It lives in gate_owners so that
+-- reassigning an owner is an UPDATE, not a code change plus a review and a
+-- deploy. NULL until that table is populated -- honestly unknown beats a
+-- name checked into source that nobody remembers to change.
+DECLARE OR REPLACE VARIABLE gate_owner STRING;
+SET VARIABLE gate_owner = (
+    SELECT owner
+    FROM `ftw-week-08`.`01-control`.gate_owners
+    WHERE layer = 'bronze' AND dataset = 'taxi_zones'
+);
+
 
 -- Independent re-read of the snapshot. The hash formula must stay
 -- identical to the one in 30_load_taxi_zones.sql, or the reconciliation
@@ -310,7 +321,7 @@ SELECT
     (SELECT MAX(batch_id) FROM base),
     (SELECT MAX(source_file_version) FROM base),
     code_revision,
-    'TODO',
+    gate_owner,
     NULL,
     details
 FROM checks;

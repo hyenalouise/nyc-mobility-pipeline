@@ -92,6 +92,27 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-control`.data_quality_results (
 )
 USING DELTA;
 
+-- ------------------------------------------------------------
+-- Who to contact when a gate fails, keyed by the (layer, dataset) pair each
+-- gate already writes. Deliberately NOT seeded here: a name committed to
+-- source needs a pull request and a deploy to change, so it goes stale and
+-- then misroutes the very alert it exists to route. Populate it once in
+-- Databricks and UPDATE it when ownership moves:
+--
+--   INSERT INTO `ftw-week-08`.`01-control`.gate_owners
+--   VALUES ('bronze', 'green_taxi', 'someone@example.com', current_timestamp());
+--
+-- An unpopulated row leaves owner NULL, which is honest. A stale name is not.
+-- Keep (layer, dataset) unique; Delta does not enforce it.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-control`.gate_owners (
+    layer STRING NOT NULL,       -- control / bronze / silver / integration / gold / analytics
+    dataset STRING NOT NULL,     -- matches the dataset the gate writes
+    owner STRING,                -- email or name; NULL means unassigned
+    updated_at TIMESTAMP
+)
+USING DELTA;
+
 
 -- ------------------------------------------------------------
 -- The shared status rule from docs/validation.md, defined once so six
