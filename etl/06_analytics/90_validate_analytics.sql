@@ -30,7 +30,7 @@ DECLARE OR REPLACE VARIABLE dq_run_id STRING;
 SET VARIABLE dq_run_id = uuid();
 
 DECLARE OR REPLACE VARIABLE code_revision STRING;
-SET VARIABLE code_revision = 'UNSET';
+SET VARIABLE code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
 
 
 INSERT INTO `ftw-week-08`.`01-control`.data_quality_results

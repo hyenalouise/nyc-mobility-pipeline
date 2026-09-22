@@ -301,6 +301,21 @@ resources:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
             dashboard_id: 01f1b2d7cd3819ab9f69f54022737848
+      # Every gate reads :code_revision and stamps it on the rows it writes, so
+      # a data-quality result can be traced to the code that produced it.
+      #
+      # Declared once at job level: a job parameter reaches a sql_task without
+      # per-task wiring, so ten per-task entries would be ten things to get
+      # wrong. Resolved at deploy time from the same substitution as
+      # git_source below, so the commit that runs and the commit recorded are
+      # the same value by construction.
+      #
+      # Override for a backfill that reproduces an older revision:
+      #   databricks bundle run NYC_Mobility_Pipeline --params code_revision=<sha>
+      parameters:
+        - name: code_revision
+          default: ${bundle.git.commit}
+
       # Pinned to a commit, not a branch, and deliberately.
       #
       # A branch is resolved when the job RUNS; ${bundle.git.commit} is

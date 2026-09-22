@@ -8,10 +8,12 @@
 DECLARE OR REPLACE VARIABLE dq_run_id STRING;
 SET VARIABLE dq_run_id = uuid();
 
--- Supply the Git commit in the Databricks job when available. Keeping an
--- explicit placeholder is preferable to silently claiming an unknown revision.
+-- Supplied by the job as a SQL parameter (databricks.yml, job-level
+-- `parameters`), so every result row traces to the commit that produced it.
+-- A gate run by hand with no value records 'UNSET' rather than claiming a
+-- revision the run cannot prove.
 DECLARE OR REPLACE VARIABLE gold_code_revision STRING;
-SET VARIABLE gold_code_revision = 'not_provided';
+SET VARIABLE gold_code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
 
 -- The results table is created once in etl/01_control/00_create_control_tables.sql.
 -- This file used to declare its own copy, which diverged: it carried an extra

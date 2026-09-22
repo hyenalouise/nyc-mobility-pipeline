@@ -20,7 +20,7 @@ DECLARE OR REPLACE VARIABLE dq_run_id STRING;
 SET VARIABLE dq_run_id = uuid();
 
 DECLARE OR REPLACE VARIABLE code_revision STRING;
-SET VARIABLE code_revision = 'UNSET';
+SET VARIABLE code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
 
 
 -- Independent re-read. The response-version hash must stay identical to

@@ -17,9 +17,12 @@
 DECLARE OR REPLACE VARIABLE dq_run_id STRING;
 SET VARIABLE dq_run_id = uuid();
 
--- Set from the job parameter or `git rev-parse --short HEAD` before running.
+-- Supplied by the job as a SQL parameter (databricks.yml, job-level
+-- `parameters`), so every result row traces to the commit that produced it.
+-- A gate run by hand with no value records 'UNSET' rather than claiming a
+-- revision the run cannot prove.
 DECLARE OR REPLACE VARIABLE code_revision STRING;
-SET VARIABLE code_revision = 'UNSET';
+SET VARIABLE code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
 
 
 -- Independent re-read of the landing folder, for source -> Bronze
