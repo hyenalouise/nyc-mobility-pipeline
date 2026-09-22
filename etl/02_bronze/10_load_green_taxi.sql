@@ -143,7 +143,7 @@ UPDATE `ftw-week-08`.`01-control`.ingestion_batches
 SET status = 'SUPERSEDED'
 WHERE source_system = 'green_taxi'
   AND status = 'SUCCESS'
-  AND content_sha256 IN ((SELECT content_sha256 FROM green_taxi_new_files));
+  AND content_sha256 IN (SELECT content_sha256 FROM green_taxi_new_files);
 
 INSERT INTO `ftw-week-08`.`01-control`.ingestion_batches (
     batch_id, source_system, source_object, source_period, request_parameters,

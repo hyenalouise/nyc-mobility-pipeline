@@ -191,7 +191,7 @@ UPDATE `ftw-week-08`.`01-control`.ingestion_batches
 SET status = 'SUPERSEDED'
 WHERE source_system = 'open_meteo'
   AND status = 'SUCCESS'
-  AND content_sha256 IN ((SELECT content_sha256 FROM open_meteo_source))
+  AND content_sha256 IN (SELECT content_sha256 FROM open_meteo_source)
   -- Only when this run will actually register a replacement; see the note
   -- in 30_load_taxi_zones.sql.
   AND weather_is_new;
