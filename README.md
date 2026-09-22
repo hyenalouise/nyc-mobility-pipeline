@@ -180,7 +180,7 @@ is what a reader should not assume.
 |---|---|
 | `src/ingestion/*.py` | **Unused.** The Bronze loaders were rewritten as SQL. `batch_tracking.py` and `schema_drift_check.py` remain in the tree but nothing imports them. |
 | Landing paths | Literals inside `read_files`, which cannot take a variable. Staging a subset of files for a test means moving files in the Volume. |
-| `code_revision` | Every gate stamps `'UNSET'`. A job parameter cannot reach it, because it is a `DECLARE OR REPLACE VARIABLE` rather than a parameter marker. |
+| `code_revision` | Every gate takes it from the job parameter of the same name, declared once at job level in `databricks.yml` and resolved at deploy time from `${bundle.git.commit}`. A gate run by hand with no value records `'UNSET'`. |
 | Schema drift | A **missing** source column fails loudly; a **new** one is silently ignored by the explicit column lists. |
 | Weather coverage | The series was requested in UTC while trips are local, so 180 trips have no weather hour. Weather measures cover 133,173 of 133,353 (D20). |
 | `supersedes_batch_id` | The column exists and is not populated (D24). |
