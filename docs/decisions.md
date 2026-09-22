@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-19
+**Last updated:** 2026-09-22
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -47,6 +47,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D22 | Rebuild every layer above Bronze in full; keep incremental processing at Bronze | Approved | Late-arriving rows and global duplicate detection stay correct without watermark state below Bronze |
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
+| D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
 
 
 ## Foundational decisions
@@ -874,3 +875,69 @@ own `batch_id`, `row_count` and timestamps.
 - `supersedes_batch_id` exists on the table but is **not yet populated**; the link
   between a batch and the one it replaces is currently inferable only from
   `content_sha256` and timestamps.
+
+### D25: `code_revision` from a job-level parameter
+
+**Status:** Approved
+**Decision date:** 2026-09-22
+
+**Decision:**
+
+Every gate keeps its `code_revision` session variable and assigns it from the SQL
+parameter of the same name:
+
+    SET VARIABLE code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
+
+The value is supplied once, as a job-level parameter in `databricks.yml`,
+defaulting to `${bundle.git.commit}` so it resolves at deploy time. Gold keeps its
+own variable name, `gold_code_revision`; only the assignment changed.
+
+**Reason:**
+
+All ten gates hardcoded a sentinel, so `data_quality_results` and `pipeline_runs`
+recorded a constant as the code version. Lineage reached the source file and the
+run but not the logic, which is the link needed when a number is wrong. Gold
+spelled its sentinel `'not_provided'` while the others used `'UNSET'`, so "no
+revision recorded" had two values while `gate_status` aggregates with
+`MAX(code_revision)`.
+
+`git_source` tracks a ref, so a run executes whatever that ref points at when it
+starts. Without a recorded revision, two runs described as "from main" can be
+different code and nothing says which.
+
+**Verified on the workspace, 2026-09-22:**
+
+- `SET VARIABLE x = :marker` binds when a value is supplied. An earlier attempt
+  returned `UNBOUND_SQL_PARAMETER`, but the parameter was empty at the time: that
+  error means "no value supplied", not "unsupported".
+- A **job-level** parameter reaches a `sql_task` file with no per-task wiring.
+- After deploying and running `90_validate_control`, `pipeline_runs` recorded the
+  deployed commit rather than a sentinel.
+
+**Rejected alternatives:**
+
+- **Removing the variable and using the marker inline at each usage site.** Works,
+  but touches every reference rather than one line, and an earlier mechanical
+  substitution of exactly that shape put an expression into an `INSERT` column
+  list and broke the Gold gate with `PARSE_SYNTAX_ERROR`. More edits, more risk,
+  no gain now that `SET VARIABLE` is known to accept a marker.
+- **Ten per-task parameters.** Equivalent, but ten entries are ten things to get
+  wrong when one suffices.
+- **Renaming `gold_code_revision` to match the other nine.** Gold's `INSERT` names
+  a target column `code_revision`, and how a bare reference resolves there when a
+  column of that name is in scope was not verified. The name is a local variable
+  that is never stored; what had to match across gates was the value.
+- **Writing the revision into a control table for gates to read.** Avoids
+  parameters entirely, but adds an ordering dependency between tasks to solve a
+  problem the parameter already solves.
+
+**Consequences:**
+
+- A gate run by hand with no parameter records `'UNSET'`. An empty value is
+  recorded honestly rather than claiming a revision the run cannot prove.
+- A gate run by hand with **no parameter defined at all** fails with
+  `UNBOUND_SQL_PARAMETER`. This is inherent to parameter markers — there is no
+  optional form — and it makes the untraceable run the awkward one.
+- The recorded revision is the **deployed** commit, not the latest commit on the
+  branch. Picking up new code requires a deploy, which is the point of a
+  controlled deployment rather than a limitation of it.
