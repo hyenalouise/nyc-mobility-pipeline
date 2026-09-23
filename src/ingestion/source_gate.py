@@ -7,9 +7,22 @@ import duckdb
 
 
 CONTRACT_PATH = Path("config/source_contract.json")
-DEFAULT_EVIDENCE_PATH = Path(
-    "evidence/proof/source-validation/results.json"
-)
+
+# Green Taxi keeps its original, already-committed filename (results.json,
+# referenced by docs/duckdb/evidence.md) so this fix stays backward
+# compatible. Any other source falls back to a per-source filename instead
+# of sharing that path -- which is what let a taxi_zones run silently
+# overwrite Green Taxi's committed evidence before this fix.
+DEFAULT_EVIDENCE_PATHS = {
+    "green_taxi": Path("evidence/proof/source-validation/results.json"),
+}
+
+
+def default_evidence_path(source):
+    return DEFAULT_EVIDENCE_PATHS.get(
+        source,
+        Path(f"evidence/proof/source-validation/{source}_results.json"),
+    )
 
 # Local view name each source is loaded into. Kept separate per source so a
 # --source green_taxi run and a --source taxi_zones run can never silently
@@ -769,6 +782,42 @@ def run_taxi_zones_checks(connection, contract):
         )
     )
 
+    # 7. LocationID is a valid integer in range. Not-null and uniqueness
+    # alone let a non-numeric value like "abc" through, since DuckDB's CSV
+    # sniffer widens the whole column to VARCHAR the moment one row is
+    # non-numeric, and a string is still non-null and still unique.
+    # TRY_CAST catches both a value that cannot be an integer at all and one
+    # that parses but falls outside the real 1-265 LocationID range, mirroring
+    # Green Taxi's location_id_range check.
+    invalid_location_id = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        WHERE LocationID IS NOT NULL
+          AND (
+                TRY_CAST(LocationID AS INTEGER) IS NULL
+                OR TRY_CAST(LocationID AS INTEGER) < 1
+                OR TRY_CAST(LocationID AS INTEGER) > 265
+              )
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="location_id_valid_integer",
+            check_type="RANGE",
+            severity="BLOCK",
+            fail_count=invalid_location_id,
+            total_count=total_rows,
+            threshold_pct=0.0,
+            details=(
+                "LocationID must be an integer between 1 and 265, "
+                "since it is the key trips join against."
+            ),
+        )
+    )
+
     # 7. Borough not null. Every zone must resolve to a named borough for
     # any downstream aggregation by borough to be meaningful.
     borough_nulls = scalar(
@@ -878,8 +927,12 @@ def parse_arguments():
 
     parser.add_argument(
         "--evidence",
-        default=str(DEFAULT_EVIDENCE_PATH),
-        help="Path for generated JSON evidence.",
+        default=None,
+        help=(
+            "Path for generated JSON evidence. Defaults to a path specific "
+            "to --source, so different sources never share, and silently "
+            "overwrite, one evidence file."
+        ),
     )
 
     return parser.parse_args()
@@ -963,7 +1016,11 @@ def main():
     print(f"\nGate result: {gate_result}")
     print(f"Exit code: {exit_code}")
 
-    evidence_path = Path(args.evidence)
+    evidence_path = (
+        Path(args.evidence)
+        if args.evidence
+        else default_evidence_path(args.source)
+    )
 
     write_evidence(
         path=evidence_path,

@@ -3,7 +3,7 @@
   "inputs": [
     "taxi_zone_lookup.csv"
   ],
-  "check_count": 7,
+  "check_count": 8,
   "gate_result": "ACCEPTED",
   "exit_code": 0,
   "results": [
@@ -72,6 +72,17 @@
       "fail_pct": 0.0,
       "threshold_pct": 0.0,
       "details": "Every LocationID must appear exactly once."
+    },
+    {
+      "check_name": "location_id_valid_integer",
+      "check_type": "RANGE",
+      "severity": "BLOCK",
+      "status": "PASS",
+      "fail_count": 0,
+      "total_count": 265,
+      "fail_pct": 0.0,
+      "threshold_pct": 0.0,
+      "details": "LocationID must be an integer between 1 and 265, since it is the key trips join against."
     },
     {
       "check_name": "borough_not_null",

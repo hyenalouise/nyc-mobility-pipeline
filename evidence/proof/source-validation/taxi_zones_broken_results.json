@@ -3,7 +3,7 @@
   "inputs": [
     "broken_zones.csv"
   ],
-  "check_count": 7,
+  "check_count": 8,
   "gate_result": "BLOCKED",
   "exit_code": 1,
   "results": [
@@ -27,18 +27,18 @@
       "total_count": 1,
       "fail_pct": 0.0,
       "threshold_pct": 0.0,
-      "details": "Observed source rows: 7."
+      "details": "Observed source rows: 265."
     },
     {
       "check_name": "row_count_floor",
       "check_type": "VOLUME",
       "severity": "BLOCK",
-      "status": "FAIL",
-      "fail_count": 1,
+      "status": "PASS",
+      "fail_count": 0,
       "total_count": 1,
-      "fail_pct": 100.0,
+      "fail_pct": 0.0,
       "threshold_pct": 0.0,
-      "details": "Observed rows: 7; required minimum: 265."
+      "details": "Observed rows: 265; required minimum: 265."
     },
     {
       "check_name": "required_columns",
@@ -55,10 +55,10 @@
       "check_name": "location_id_not_null",
       "check_type": "NOT_NULL",
       "severity": "BLOCK",
-      "status": "FAIL",
-      "fail_count": 1,
-      "total_count": 7,
-      "fail_pct": 14.2857,
+      "status": "PASS",
+      "fail_count": 0,
+      "total_count": 265,
+      "fail_pct": 0.0,
       "threshold_pct": 0.0,
       "details": "LocationID is required."
     },
@@ -67,11 +67,22 @@
       "check_type": "DUPLICATE",
       "severity": "BLOCK",
       "status": "FAIL",
-      "fail_count": 2,
-      "total_count": 7,
-      "fail_pct": 28.5714,
+      "fail_count": 1,
+      "total_count": 265,
+      "fail_pct": 0.3774,
       "threshold_pct": 0.0,
       "details": "Every LocationID must appear exactly once."
+    },
+    {
+      "check_name": "location_id_valid_integer",
+      "check_type": "RANGE",
+      "severity": "BLOCK",
+      "status": "FAIL",
+      "fail_count": 1,
+      "total_count": 265,
+      "fail_pct": 0.3774,
+      "threshold_pct": 0.0,
+      "details": "LocationID must be an integer between 1 and 265, since it is the key trips join against."
     },
     {
       "check_name": "borough_not_null",
@@ -79,8 +90,8 @@
       "severity": "BLOCK",
       "status": "FAIL",
       "fail_count": 1,
-      "total_count": 7,
-      "fail_pct": 14.2857,
+      "total_count": 265,
+      "fail_pct": 0.3774,
       "threshold_pct": 0.0,
       "details": "Borough is required."
     }

@@ -173,8 +173,10 @@ A clean file is `ACCEPTED` (exit code 0); a file failing any check is `BLOCKED`
 (exit code 1) and Bronze must not proceed. Evidence for both cases is recorded
 under `evidence/proof/source-validation/`.
 
-See `docs/duckdb/validation_checks.md` for the full check catalogue shared
-across sources.
+See `docs/duckdb/validation_checks.md` for the full check catalogue. The
+severity model and command line are shared across sources; the individual
+checks are not, since each source's business rules differ -- see that file
+for each source's specific list.
 
 ## Failures and recovery
 
