@@ -28,8 +28,12 @@ SET VARIABLE code_revision = COALESCE(NULLIF(:code_revision, ''), 'UNSET');
 DECLARE OR REPLACE VARIABLE stuck_after_hours INT;
 SET VARIABLE stuck_after_hours = 6;
 
+-- previous_attempt_run_id is not yet populated: linking a retry to
+-- the run it supersedes currently requires a human to know and supply the
+-- old run_id, with nothing to catch a missed or wrong value, so every run
+-- records NULL here until that traceability is built out.
 INSERT INTO `ftw-week-08`.`01-control`.pipeline_runs
-SELECT dq_run_id, code_revision, 'manual', current_timestamp(), NULL, 'STARTED';
+SELECT dq_run_id, code_revision, 'manual', current_timestamp(), NULL, 'STARTED', NULL;
 
 
 -- ------------------------------------------------------------
@@ -210,6 +214,48 @@ SET completed_at = current_timestamp(),
                 ) THEN 'FAILED' ELSE 'SUCCESS'
              END
 WHERE run_id = dq_run_id;
+
+-- ------------------------------------------------------------
+-- 8. Stuck runs. Mirrors check 4 (no_stuck_batches), but for pipeline_runs
+--    itself: a run still STARTED long after it began was abandoned by a
+--    crash or a hung job, not something genuinely in progress. Runs after
+--    the UPDATE above so this run's own row is already finalized and can't
+--    flag itself while it's still fresh.
+-- ------------------------------------------------------------
+INSERT INTO `ftw-week-08`.`01-control`.data_quality_results
+SELECT
+    dq_run_id,
+    current_timestamp(),
+    'control',
+    'pipeline_runs',
+    'no_stuck_runs',
+    'lifecycle',
+    'WARN',
+    `ftw-week-08`.`01-control`.dq_status(
+        'WARN',
+        fail_count,
+        CASE WHEN total_count = 0 THEN 0.0 ELSE fail_count * 100.0 / total_count END,
+        0.0
+    ),
+    fail_count,
+    total_count,
+    CASE WHEN total_count = 0 THEN 0.0 ELSE fail_count * 100.0 / total_count END,
+    0.0,
+    NULL,
+    NULL,
+    code_revision,
+    'TODO',
+    NULL,
+    CONCAT('stuck threshold (hours): ', CAST(stuck_after_hours AS STRING))
+FROM (
+    SELECT
+        COUNT_IF(
+            status = 'STARTED'
+            AND started_at < current_timestamp() - MAKE_INTERVAL(0, 0, 0, 0, stuck_after_hours)
+        ) AS fail_count,
+        COUNT(*) AS total_count
+    FROM `ftw-week-08`.`01-control`.pipeline_runs
+);
 
 SELECT CASE
          WHEN COUNT_IF(status = 'FAIL') > 0

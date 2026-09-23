@@ -53,9 +53,14 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-control`.pipeline_runs (
     triggered_by STRING,         -- job name, user, or 'manual'
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
-    status STRING                -- STARTED / SUCCESS / FAILED
+    status STRING,                     -- STARTED / SUCCESS / FAILED
+    previous_attempt_run_id STRING     -- the failed run this run retries; null for a first attempt
 )
 USING DELTA;
+
+
+ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
+ADD COLUMN IF NOT EXISTS previous_attempt_run_id STRING COMMENT 'The failed run this run retries; null for a first attempt.';
 
 
 -- ------------------------------------------------------------
