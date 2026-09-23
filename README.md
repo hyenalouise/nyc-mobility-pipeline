@@ -495,6 +495,7 @@ review rules.
 | [`docs/validation.md`](docs/validation.md) | Required checks and acceptance evidence |
 | [`docs/decisions.md`](docs/decisions.md) | Accepted decisions and rejected alternatives |
 | [`docs/job_setup.md`](docs/job_setup.md) | How to wire the pipeline as a Databricks job, task by task |
+| [`docs/workflow.md`](docs/workflow.md) | How to work on this repository: Databricks Git folders, GitHub, the terminal, deploying and checking |
 
 If documentation and implementation disagree, stop and resolve the discrepancy
 through the relevant issue. Do not silently choose one.
