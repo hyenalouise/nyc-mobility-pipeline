@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-23
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -48,6 +48,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
+| D26 | Add `previous_attempt_run_id` to `pipeline_runs`; population deferred, scope limited to Control gate | Approved | Retries are now representable in the schema, but not yet automatically linked; whole-pipeline execution tracking remains out of scope |
 
 
 ## Foundational decisions
@@ -941,3 +942,76 @@ different code and nothing says which.
 - The recorded revision is the **deployed** commit, not the latest commit on the
   branch. Picking up new code requires a deploy, which is the point of a
   controlled deployment rather than a limitation of it.
+
+
+
+## Monitoring decisions
+
+### D26: `previous_attempt_run_id` on `pipeline_runs`, scoped to the Control gate
+
+**Status:** Approved
+**Decision date:** 2026-09-23
+
+**Decision:**
+
+`pipeline_runs` gains `previous_attempt_run_id STRING` — the failed run this
+run retries, null for a first attempt — mirroring `ingestion_batches.
+supersedes_batch_id` (D14, D24). It is added to both the `CREATE TABLE IF NOT
+EXISTS` block and landed on the already-deployed dev table with `ALTER TABLE
+... ADD COLUMN IF NOT EXISTS`, per the same "no-op on an existing table"
+gotcha already documented for Gold.
+
+`90_validate_control.sql` always inserts `NULL` for this column for now
+(Option A below), and gains a new check, `no_stuck_runs`, mirroring check 4
+(`no_stuck_batches`): a run still `STARTED` past `stuck_after_hours` is
+flagged as abandoned rather than in progress.
+
+This work is scoped to the Control gate only. Of the classroom monitoring
+framework's five execution signals (STATUS, DURATION, FAILURES, RECENCY,
+RETRIES), only RETRIES required a schema change — the other four are already
+answerable from existing `pipeline_runs` columns. Whole-pipeline execution
+tracking (every gate, not just Control, writing to `pipeline_runs`) remains
+out of scope; `pipeline_runs` is currently written to only by
+`90_validate_control.sql`.
+
+**Reason:**
+
+The RETRIES signal needs a way to say "this run is a retry of that run."
+Without it, a retried Control-gate run is indistinguishable from a normal
+run in `pipeline_runs`.
+
+**Rejected alternatives:**
+
+- **Option B — populate it automatically**, by adding a job-level SQL
+  parameter (`:previous_attempt_run_id`) the same way D25 wired
+  `code_revision`. Rejected for now: it requires a human to look up and
+  supply the failed run's `run_id` on manual retry, with nothing to catch a
+  missed or wrong value, and no test yet proves it's used correctly (unlike
+  `code_revision`, which D25's verification covered). Deferred until
+  retry-traceability testing exists alongside it.
+- **`supersedes_run_id`** as the column name, matching
+  `ingestion_batches.supersedes_batch_id` exactly. Renamed to
+  `previous_attempt_run_id` for clarity between the two control tables.
+- **Whole-pipeline execution tracking**, writing `pipeline_runs` rows from
+  every `90_validate_*` gate rather than Control alone. Rejected for this
+  pass to avoid touching every gate file; the last-gate-in-the-chain (Gold)
+  could stand in for "did the whole pipeline run" if this is revisited, or
+  Databricks' own native job-run history could be used instead of expanding
+  `pipeline_runs`. Left as a documented option, not a decision.
+
+**Consequences:**
+
+- `previous_attempt_run_id` exists and is queryable but always `NULL` until
+  Option B (or an equivalent) is implemented — a retry cannot yet be traced
+  through this column, only inferred manually.
+- `no_stuck_runs` participates in the same blocking logic as
+  `no_stuck_batches` (WARN severity, `threshold_pct = 0.0`), so a stuck run
+  fails the gate, not just warns.
+- Execution-layer monitoring for STATUS, DURATION, FAILURES, and RECENCY
+  required no schema change and can be built directly from existing
+  `pipeline_runs` columns.
+
+**Files:**
+
+- `etl/01_control/00_create_control_tables.sql`
+- `etl/01_control/90_validate_control.sql`
