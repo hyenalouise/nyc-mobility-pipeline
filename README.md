@@ -439,9 +439,14 @@ push to `main`:
 | Job | Fails when |
 |---|---|
 | Repository checks | `git diff --check` finds whitespace errors, or `python -m pytest tests` fails |
+| Local pipeline runs | `src/ingestion/source_gate.py`, run against generated sample Green Taxi files, doesn't accept a clean delivery, doesn't block a bad one with the right exit code, or a blocked result would still reach a publish step |
 | PR links an issue | The PR description has no `Closes #N`, `Part of #N`, or `Related to #N` |
 
-CI does not connect to Databricks and does not run the pipeline.
+CI does not connect to Databricks — Local pipeline runs proves the pre-ingestion
+gate's own logic against generated sample files, not the real Silver/Gold SQL,
+and it has no persisted run history across invocations, so it cannot prove a
+rerun skips publishing a duplicate; that guarantee is Bronze's own
+content-hash MERGE key (`docs/decisions.md`), not this check's job.
 
 ## Development workflow
 

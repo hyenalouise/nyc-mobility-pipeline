@@ -663,8 +663,16 @@ def main():
         )
         return 2
 
-        inputs = args.input
-        network_prefixes = (
+    inputs = args.input
+
+    if not inputs:
+        print(
+            "MISSING_INPUT: No Green Taxi inputs "
+            "were provided."
+        )
+        return 2
+
+    network_prefixes = (
         "http://",
         "https://",
         "s3://",
@@ -676,14 +684,6 @@ def main():
             print(
                 "NETWORK_INPUT_NOT_ALLOWED: "
                 "Only local files may be validated."
-            )
-            return 2
-
-
-        if not inputs:
-            print(
-                "MISSING_INPUT: No Green Taxi inputs "
-                "were provided."
             )
             return 2
 

@@ -70,14 +70,15 @@ Say what changed and why, and what you ran to check it. Include counts if data i
 
 ### Reading the checks
 
-Two run on every pull request:
+Three run on every pull request:
 
 | Check | Fails when |
 |---|---|
 | Repository checks | a test fails, or a file breaks a naming or layout rule |
+| Local pipeline runs | `src/ingestion/source_gate.py` doesn't accept a clean sample delivery, doesn't block a bad one with the right exit code, or a blocked result would still reach a publish step |
 | PR links an issue | the description has no `Closes #N` |
 
-Worth knowing what these don't cover: neither one runs the pipeline. They check the code and the PR description, not whether the thing still works against data. A change can go green here and still break Bronze. Issue #116 is about closing that gap.
+Worth knowing what these don't cover: none of them touch a Databricks warehouse, so a change can go green here and still break Bronze — Local pipeline runs proves the pre-ingestion gate's own logic against generated sample files, not the real Silver/Gold SQL, and it has no persisted run history, so it can't prove a rerun skips publishing a duplicate the way a stateful tool could; that guarantee comes from Bronze's own content-hash MERGE key instead (`docs/decisions.md`). Issue #116 closed the "nothing runs the pipeline at all" gap; it didn't turn CI into a warehouse.
 
 Click into a failed one to see which test broke.
 

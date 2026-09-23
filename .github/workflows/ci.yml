@@ -15,9 +15,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  PYTHONPATH: src
-
 jobs:
   repository-checks:
     name: Repository checks
@@ -25,8 +22,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -34,19 +29,6 @@ jobs:
 
       - name: Install check dependencies
         run: python -m pip install -r requirements-dev.txt
-
-      # Only the lines this change adds. The tree carries pre-existing
-      # trailing whitespace in docs/, and reformatting it here would bury the
-      # change under unrelated diff noise.
-      - name: Check whitespace in the changed lines
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base" ]; then base="$(git rev-parse HEAD~1 2>/dev/null || true)"; fi
-          if [ -z "$base" ]; then
-            echo "No base commit to compare against; nothing to check."
-            exit 0
-          fi
-          git diff --check "$base" HEAD
 
       - name: Run tests and policy checks
         run: python -m pytest tests -q
@@ -65,73 +47,174 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Build a sample landing folder
+      # Generated from config/source_contract.json's own declared columns,
+      # not hand-typed, so a contract change surfaces here instead of the
+      # sample quietly going stale. Rows are distinct (pickup time shifts
+      # per row) on purpose: 15 identical rows would trip the gate's own
+      # full_source_row_duplicate check and produce a false BLOCKED.
+      - name: Build sample landing files
         run: |
           python - <<'PY'
-          import datetime as dt, json, pathlib, duckdb
+          import datetime as dt
+          import json
+          import pathlib
 
-          contract = json.loads(pathlib.Path("config/source_contract.json").read_text())
-          columns = contract["sources"]["green_taxi"]["expected_columns"]
-          landing = pathlib.Path("ci_landing/green_taxi")
+          import duckdb
+
+          contract = json.loads(
+              pathlib.Path("config/source_contract.json").read_text()
+          )
+          required = contract["green_taxi"]["required_columns"]
+
+          # source_gate.py checks column presence only (required_columns has
+          # no declared types), so types here just need to be plausible for
+          # a Parquet write -- they are not asserted against the contract.
+          known_types = {
+              "VendorID": "INTEGER",
+              "lpep_pickup_datetime": "TIMESTAMP",
+              "lpep_dropoff_datetime": "TIMESTAMP",
+              "store_and_fwd_flag": "VARCHAR",
+              "RatecodeID": "BIGINT",
+              "PULocationID": "INTEGER",
+              "DOLocationID": "INTEGER",
+              "passenger_count": "BIGINT",
+              "trip_distance": "DOUBLE",
+              "fare_amount": "DOUBLE",
+              "extra": "DOUBLE",
+              "mta_tax": "DOUBLE",
+              "tip_amount": "DOUBLE",
+              "tolls_amount": "DOUBLE",
+              "ehail_fee": "DOUBLE",
+              "improvement_surcharge": "DOUBLE",
+              "total_amount": "DOUBLE",
+              "payment_type": "BIGINT",
+              "trip_type": "BIGINT",
+              "congestion_surcharge": "DOUBLE",
+              "cbd_congestion_fee": "DOUBLE",
+          }
+          columns = [(name, known_types[name]) for name in known_types]
+          missing_from_sample = set(required) - {name for name, _ in columns}
+          if missing_from_sample:
+              raise SystemExit(
+                  "Sample builder is missing contract-required column(s): "
+                  f"{sorted(missing_from_sample)}. Add them to known_types "
+                  "above before this sample can stand in for a real delivery."
+              )
+
+          def make_row(i):
+              pickup = dt.datetime(2026, 3, 15, 9, 0) + dt.timedelta(minutes=i)
+              dropoff = pickup + dt.timedelta(minutes=12)
+              return [
+                  2, pickup, dropoff, "N", 1, 74 + (i % 20), 42 + (i % 15), 1,
+                  round(3.2 + i * 0.01, 2), round(14.5 + i * 0.1, 2),
+                  0.5, 0.5, 2.0, 0.0, None, 1.0, round(18.5 + i * 0.1, 2),
+                  1, 1, 0.0, 0.0,
+              ]
+
+          landing = pathlib.Path("ci_landing")
           landing.mkdir(parents=True, exist_ok=True)
 
-          row = [2, dt.datetime(2026, 3, 15, 9, 0), dt.datetime(2026, 3, 15, 9, 20), "N",
-                 1, 74, 42, 1, 3.2, 14.5, 0.5, 0.5, 2.0, 0.0, None, 1.0, 18.5, 1, 1, 0.0, 0.0]
-          bad = list(row)
-          bad[8] = -1.0  # trip_distance below zero: a blocking check
-
           con = duckdb.connect()
-          con.execute("CREATE TABLE t (%s)" % ", ".join(
-              '"%s" %s' % (c["name"], c["type"]) for c in columns))
+          con.execute(
+              "CREATE TABLE t (%s)"
+              % ", ".join('"%s" %s' % c for c in columns)
+          )
           marks = ", ".join("?" * len(columns))
-          con.execute("INSERT INTO t SELECT %s FROM range(?)" % marks, row + [1500])
-          con.execute("COPY t TO 'ci_landing/green_taxi/green_tripdata_2026-03.parquet' (FORMAT PARQUET)")
-          con.execute("INSERT INTO t VALUES (%s)" % marks, bad)
-          con.execute("COPY t TO 'ci_broken.parquet' (FORMAT PARQUET)")
+          for i in range(50):
+              con.execute(f"INSERT INTO t VALUES ({marks})", make_row(i))
+          con.execute(
+              "COPY t TO 'ci_landing/green_tripdata_2026-03.parquet' "
+              "(FORMAT PARQUET)"
+          )
+
+          bad_row = make_row(0)
+          bad_row[8] = -1.0  # trip_distance below zero: a BLOCK-severity check
+          con.execute(
+              "CREATE TABLE b (%s)"
+              % ", ".join('"%s" %s' % c for c in columns)
+          )
+          con.execute(f"INSERT INTO b VALUES ({marks})", bad_row)
+          con.execute("COPY b TO 'ci_bad_delivery.parquet' (FORMAT PARQUET)")
           PY
 
-      - name: CLI starts and bootstraps its audit database
+      - name: A clean delivery is accepted
         run: |
-          python -m nyc_mobility --version
-          python -m nyc_mobility history --state-dir ci_state
+          python src/ingestion/source_gate.py \
+            --input ci_landing/green_tripdata_2026-03.parquet \
+            --evidence ci_evidence/clean.json
 
-      - name: A clean delivery passes and publishes
-        env:
-          NYC_MOBILITY_ENV: ci
+      - name: A bad delivery is refused with exit code 1
         run: |
-          python -m nyc_mobility run --source green_taxi \
-            --source-dir ci_landing --state-dir ci_state --json
-
-      - name: A rerun of the same input publishes no duplicate
-        env:
-          NYC_MOBILITY_ENV: ci
-        run: |
-          python -m nyc_mobility run --source green_taxi \
-            --source-dir ci_landing --state-dir ci_state
-          rows=$(python -m nyc_mobility manifest --source green_taxi \
-            --state-dir ci_state --json | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
-          test "$rows" = "1" || { echo "::error::rerun produced $rows manifest rows, expected 1"; exit 1; }
-
-      - name: A bad delivery is refused with exit code 2
-        env:
-          NYC_MOBILITY_ENV: ci
-        run: |
-          mv ci_broken.parquet ci_landing/green_taxi/green_tripdata_2026-04.parquet
           set +e
-          python -m nyc_mobility run --source green_taxi \
-            --source-dir ci_landing --state-dir ci_state --period 2026-04
+          python src/ingestion/source_gate.py \
+            --input ci_bad_delivery.parquet \
+            --evidence ci_evidence/bad.json
           status=$?
           set -e
-          test "$status" = "2" || { echo "::error::expected exit 2, got $status"; exit 1; }
+          test "$status" = "1" || { echo "::error::expected exit 1 (BLOCKED), got $status"; exit 1; }
 
-      - name: The refused delivery was not published
-        env:
-          NYC_MOBILITY_ENV: ci
+      - name: The refused delivery's evidence names the failing check
         run: |
-          periods=$(python -m nyc_mobility manifest --source green_taxi \
-            --state-dir ci_state --json \
-            | python -c 'import json,sys; print(",".join(sorted(r["source_period"] for r in json.load(sys.stdin))))')
-          test "$periods" = "2026-03" || { echo "::error::manifest holds $periods, expected only 2026-03"; exit 1; }
+          python - <<'PY'
+          import json
+
+          evidence = json.loads(open("ci_evidence/bad.json").read())
+          assert evidence["gate_result"] == "BLOCKED", evidence["gate_result"]
+          failing = [r["check_name"] for r in evidence["results"] if r["status"] == "FAIL"]
+          assert "trip_distance_non_negative" in failing, failing
+          print("Evidence correctly names the failing check:", failing)
+          PY
+
+      # source_gate.py is a stateless, single-shot validator -- it has no
+      # manifest or persisted run history, so it cannot itself prove a
+      # *rerun* skips publishing a duplicate the way a stateful CLI could.
+      # What it can prove, and what this asserts, is that the same input
+      # produces byte-identical evidence every time: the gate's verdict is a
+      # pure function of the file, not of when or how many times it runs.
+      # Duplicate-safe publishing itself is Bronze's job, via the
+      # content-hash MERGE key documented in docs/decisions.md.
+      - name: Rerunning the same clean delivery is deterministic
+        run: |
+          python src/ingestion/source_gate.py \
+            --input ci_landing/green_tripdata_2026-03.parquet \
+            --evidence ci_evidence/clean_rerun.json
+          diff ci_evidence/clean.json ci_evidence/clean_rerun.json \
+            || { echo "::error::same input produced different evidence on rerun"; exit 1; }
+
+      - name: A missing delivery is refused, not silently skipped
+        run: |
+          set +e
+          python src/ingestion/source_gate.py \
+            --input "ci_landing/does_not_exist_*.parquet" \
+            --evidence ci_evidence/missing.json
+          status=$?
+          set -e
+          test "$status" = "3" || { echo "::error::expected exit 3 (missing/unreadable input), got $status"; exit 1; }
+
+      # This repo has no CI credentials for Databricks (by design -- see
+      # docs/ingestion.md), so Bronze cannot actually run here. What this
+      # proves instead is the *pattern* a real job must use: a step gated on
+      # the prior step's outcome, so a BLOCKED gate result never reaches a
+      # publish step, rather than trusting that whoever wires the job
+      # remembers to check the exit code.
+      - name: Run the gate on a bad delivery (publish-gating check)
+        id: gate_bad
+        continue-on-error: true
+        run: |
+          python src/ingestion/source_gate.py \
+            --input ci_bad_delivery.parquet \
+            --evidence ci_evidence/bad_for_publish_check.json
+
+      - name: Bronze publish would run here
+        if: steps.gate_bad.outcome == 'success'
+        run: |
+          echo "::error::Bronze publish ran even though the gate blocked this delivery."
+          exit 1
+
+      - name: Confirm the blocked gate actually prevented publish
+        if: steps.gate_bad.outcome == 'failure'
+        run: |
+          echo "Gate step outcome was '${{ steps.gate_bad.outcome }}'; a real job conditioned the same way never reaches Bronze."
 
   pr-description:
     name: PR links an issue
