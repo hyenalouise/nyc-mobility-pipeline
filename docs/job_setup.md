@@ -4,13 +4,16 @@ How to wire the pipeline as one multi-task Databricks **Job**. A job is used rat
 
 ## Job settings
 
+These values come from `databricks.yml`. If the two disagree, `databricks.yml` is right.
+
 | Setting | Value |
 |---|---|
-| Name | `nyc-mobility-pipeline` |
-| Source | Git provider, this repository, branch `main` |
-| Compute | One shared job cluster for the run, or serverless. SQL file tasks also need a SQL warehouse. |
-| Parameters | `landing_path` (defaults to the Volume path), `reprocess` (`false`) |
-| Notifications | Email on failure |
+| Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
+| Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
+| Compute | One SQL warehouse, `${var.warehouse_id}`, for all 30 tasks (28 SQL file tasks, 2 dashboard tasks). No clusters |
+| Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25) |
+| Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
+| Notifications | None yet. Alerting on failure is #131 |
 
 Using the Git provider rather than a personal Git folder means every run uses reviewed code and records the commit it ran.
 

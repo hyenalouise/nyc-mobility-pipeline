@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-23
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -48,6 +48,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
+| D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
 
 
 ## Foundational decisions
@@ -941,3 +942,66 @@ different code and nothing says which.
 - The recorded revision is the **deployed** commit, not the latest commit on the
   branch. Picking up new code requires a deploy, which is the point of a
   controlled deployment rather than a limitation of it.
+
+
+## Scheduling decision
+
+### D27: A weekly schedule, Monday 06:00 New York time
+
+**Status:** Approved
+**Decision date:** 2026-09-23
+
+**Decision:**
+
+The job runs on a time-based schedule, weekly on Monday at 06:00
+`America/New_York`, declared in `databricks.yml`:
+
+    schedule:
+      quartz_cron_expression: "0 0 6 ? * MON"
+      timezone_id: America/New_York
+
+The schedule sets no `pause_status`. The target decides: `dev` deploys it paused
+and `prod` deploys it running.
+
+**Reason:**
+
+Every run so far was started by hand, so "how does it run tomorrow" had no
+answer, and freshness had no expected interval to be measured against.
+
+Green Taxi arrives monthly. A daily run would find nothing new on almost every
+day, and each one still costs a full pipeline run of about five and a half
+minutes of warehouse time, even though files already loaded are skipped by
+content hash. Weekly bounds how long a newly landed file waits to one week, and
+gives freshness a definition: no successful run in 8 days means the data is
+stale.
+
+**Verified with `databricks bundle validate`, 2026-09-23:**
+
+- With no `pause_status` on the job, `dev` resolves the schedule to `PAUSED` and
+  `prod` to `UNPAUSED`.
+- With `pause_status: UNPAUSED` set on the job, `dev` also resolves to
+  `UNPAUSED`. An explicit value overrides development mode, so every sandbox
+  would run on the timer. `tests/test_bundle_contract.py` fails if one is added.
+
+**Rejected alternatives:**
+
+- **A file arrival trigger.** The more accurate trigger for a monthly source,
+  since the job would run when a file lands rather than on a guess. Rejected for
+  now: files reach the Volume by hand upload rather than from a feed, so it would
+  fire on a person's upload anyway, and it has not been tried on this workspace.
+  Worth revisiting if delivery is automated.
+- **Daily.** Picks up a new file within a day, at the cost of about thirty runs a
+  month, nearly all of which find nothing new.
+- **Monthly.** Matches the source's cadence, but a file that lands the day after a
+  run waits almost a month.
+
+**Consequences:**
+
+- Nothing fires in `dev`. The schedule only produces runs once the bundle is
+  deployed to `prod`, which has not been done yet.
+- Until #122 is fixed, every run ends `FAILED` on the dashboard tasks. A running
+  schedule would report a failure every week, and failure alerting (#131) would
+  fire each time.
+- Freshness monitoring (#119, #131) can use 8 days as its staleness threshold.
+- 06:00 is New York local time, so the run moves by an hour in UTC terms when
+  daylight saving changes. The local time stays the same.
