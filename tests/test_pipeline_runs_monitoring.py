@@ -9,9 +9,11 @@ Two ways this regresses silently:
    in `status`, and nothing errors, because every column here is STRING or
    TIMESTAMP and Delta does not reject a wrongly-shifted write.
 2. `CREATE TABLE IF NOT EXISTS` is a no-op on a table that already exists
-   (the same gotcha documented for Gold). On an already-deployed dev table,
-   the `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` line is what actually lands
-   the column -- delete it and the DDL file still looks complete.
+   (the same gotcha documented for Gold). Databricks SQL's ADD COLUMN does
+   not support an IF NOT EXISTS modifier (confirmed via PARSE_SYNTAX_ERROR
+   on the workspace), so idempotency is done via an information_schema
+   check + EXECUTE IMMEDIATE. Without that, an already-deployed dev table
+   never gets the column even though the DDL file looks complete.
 
 These tests hold both in place, plus the presence of the no_stuck_runs check
 added alongside them.
@@ -82,14 +84,20 @@ def test_pipeline_runs_ddl_has_previous_attempt_run_id():
 
 def test_the_column_is_also_landed_by_a_migration():
     """CREATE TABLE IF NOT EXISTS does nothing on a table that already
-    exists. Without this ALTER TABLE, an already-deployed dev table never
-    gets the column even though the DDL file looks complete."""
+    exists. Databricks SQL's ADD COLUMN does not support an IF NOT EXISTS
+    modifier (confirmed: PARSE_SYNTAX_ERROR), so idempotency is done via an
+    information_schema check + EXECUTE IMMEDIATE. Without this, an
+    already-deployed dev table never gets the column even though the DDL
+    file looks complete."""
     text = strip_sql_comments(CONTROL_TABLES.read_text(encoding="utf-8"))
+    assert "information_schema.columns" in text and "previous_attempt_run_id" in text, (
+        "no information_schema check for previous_attempt_run_id found"
+    )
     assert re.search(
-        r"ALTER TABLE `ftw-week-08`\.`01-control`\.pipeline_runs\s*\n"
-        r"ADD COLUMN IF NOT EXISTS previous_attempt_run_id",
+        r"ALTER TABLE `ftw-week-08`\.`01-control`\.pipeline_runs ADD COLUMNS \(previous_attempt_run_id",
         text,
-    ), "no ALTER TABLE ... ADD COLUMN IF NOT EXISTS previous_attempt_run_id found"
+    ), "no ALTER TABLE ... ADD COLUMNS (previous_attempt_run_id ...) found inside the migration string"
+    assert "EXECUTE IMMEDIATE" in text, "migration is not actually executed (missing EXECUTE IMMEDIATE)"
 
 
 def test_the_insert_supplies_one_value_per_column():
@@ -121,7 +129,6 @@ def test_the_insert_leaves_previous_attempt_run_id_null_for_now():
 def test_no_stuck_runs_check_exists_and_targets_pipeline_runs():
     """Mirrors no_stuck_batches (check 4), but for pipeline_runs itself."""
     text = strip_sql_comments(CONTROL_GATE.read_text(encoding="utf-8"))
-    match = re.search(r"INSERT INTO `ftw-week-08`\.`01-control`\.data_quality_results\s*\nSELECT([^;]+);", text)
     statements = re.findall(
         r"INSERT INTO `ftw-week-08`\.`01-control`\.data_quality_results\s*\nSELECT([^;]+);", text
     )

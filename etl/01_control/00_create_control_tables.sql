@@ -67,7 +67,7 @@ SET VARIABLE _add_previous_attempt_run_id_sql =
           AND table_name = 'pipeline_runs'
           AND column_name = 'previous_attempt_run_id'
     )
-    THEN 'SELECT 1' 
+    THEN 'SELECT 1'
     ELSE "ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs ADD COLUMNS (previous_attempt_run_id STRING COMMENT 'The failed run this run retries; null for a first attempt.')"
     END;
 
