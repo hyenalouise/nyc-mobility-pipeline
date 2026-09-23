@@ -59,8 +59,19 @@ CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-control`.pipeline_runs (
 USING DELTA;
 
 
-ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
-ADD COLUMN IF NOT EXISTS previous_attempt_run_id STRING COMMENT 'The failed run this run retries; null for a first attempt.';
+DECLARE OR REPLACE VARIABLE _add_previous_attempt_run_id_sql STRING;
+SET VARIABLE _add_previous_attempt_run_id_sql =
+    CASE WHEN EXISTS (
+        SELECT 1 FROM `ftw-week-08`.information_schema.columns
+        WHERE table_schema = '01-control'
+          AND table_name = 'pipeline_runs'
+          AND column_name = 'previous_attempt_run_id'
+    )
+    THEN 'SELECT 1' 
+    ELSE "ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs ADD COLUMNS (previous_attempt_run_id STRING COMMENT 'The failed run this run retries; null for a first attempt.')"
+    END;
+
+EXECUTE IMMEDIATE _add_previous_attempt_run_id_sql;
 
 
 -- ------------------------------------------------------------
