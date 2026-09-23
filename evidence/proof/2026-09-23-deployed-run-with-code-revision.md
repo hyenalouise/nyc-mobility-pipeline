@@ -134,19 +134,46 @@ pickups outside the reporting window, dropoff not after pickup, and pickups
 whose month differs from the file's month. All below their thresholds, all
 measured every run.
 
-### Row counts
+### Row counts, layer by layer
 
-| | |
+    SELECT 'bronze  green_taxi_raw'    AS table_name, COUNT(*) AS rows FROM `ftw-week-08`.`02-bronze`.green_taxi_raw
+    UNION ALL
+    SELECT 'silver  green_taxi_clean',            COUNT(*) FROM `ftw-week-08`.`03-silver`.green_taxi_clean
+    UNION ALL
+    SELECT 'silver  green_taxi_quarantine',       COUNT(*) FROM `ftw-week-08`.`03-silver`.green_taxi_quarantine
+    UNION ALL
+    SELECT 'gold    fact_taxi_trip',              COUNT(*) FROM `ftw-week-08`.`05-gold`.fact_taxi_trip;
+
+| table | rows |
 |---|---:|
 | `02-bronze.green_taxi_raw` | 133,367 |
-| `SUM(fare_amount)` | 2,248,450.30 |
 | `03-silver.green_taxi_clean` | 133,353 |
+| `03-silver.green_taxi_quarantine` | 14 |
 | `05-gold.fact_taxi_trip` | 133,353 |
 
-The 14-row difference between Bronze and Silver is the D10 duplicate policy:
-seven hash-collision groups covering 14 rows are quarantined rather than
-resolved by picking a winner. Silver and Gold agree exactly, so nothing was
-lost between them.
+**133,353 + 14 = 133,367.** Every Bronze row is accounted for in Silver, either
+in the clean table or the quarantine table. Nothing was silently dropped.
+
+`SUM(fare_amount)` over Bronze is **2,248,450.30**, matching the independently
+measured source total.
+
+### Why 14 rows are held back
+
+    SELECT quarantine_reasons, COUNT(*) AS rows, COUNT(DISTINCT trip_hash) AS collision_groups
+    FROM `ftw-week-08`.`03-silver`.green_taxi_quarantine
+    GROUP BY quarantine_reasons;
+
+| quarantine_reasons | rows | collision_groups |
+|---|---:|---:|
+| `["duplicate_hash_collision…"]` | 14 | 7 |
+
+Seven collision groups, two rows each. That is the D10 policy working as
+designed: where two rows share a trip identity, **both** are held back rather
+than a winner being picked. Correctness over completeness — no survivorship
+rule is applied, because none has been confirmed by anyone with TLC billing
+knowledge.
+
+Gold matches Silver exactly, so nothing was lost between them either.
 
 ### What failed, and why it is expected
 
@@ -167,8 +194,22 @@ run being reported as failed.
     FROM `ftw-week-08`.`01-control`.pipeline_runs
     GROUP BY code_revision ORDER BY MAX(started_at) DESC;
 
+| code_revision | runs | last_seen |
+|---|---:|---|
+| `bddd28316073aefd2d9dadf66f168ec85bac4d82` | 2 | 2026-09-23 06:22:02 |
+| `a0e8704012903a936d2a694ed0ed8ea34222aa33` | 1 | 2026-09-22 16:12:13 |
+| `manual-test` | 1 | 2026-09-22 15:37:45 |
+| `UNSET` | 1 | 2026-09-22 15:10:49 |
+| `2e59753a956d857de20851285517a89ac99e3dea` | 2 | 2026-09-22 05:15:14 |
+
 `UNSET` and a real commit appear minutes apart in the same table: the state
 before these changes and the state after, on the same pipeline.
+
+The merge commit shows **two runs**. One was started from the Databricks UI and
+one from `databricks bundle run`, both against the same deployment. That is the
+behaviour to expect: `code_revision` identifies the deployed **version**, not
+an individual execution, so every run of one deployment shares it. `run_id`
+distinguishes the executions.
 
 ## What this proves
 
