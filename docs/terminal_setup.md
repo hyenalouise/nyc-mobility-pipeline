@@ -1,7 +1,6 @@
-# Terminal and Databricks CLI, from zero
+# Terminal and Databricks CLI
 
-For anyone in the group who hasn't used a terminal before. It's the setup one person currently does, written down so more than one of us can.
-
+For anyone in the group who hasn't used a terminal before.
 Go in order. Every step ends with a way to check it worked, so you're never moving on unsure.
 
 ## Why bother
@@ -11,38 +10,30 @@ Everything else you can do in a browser. Two things you can't:
 - Running the tests before you push, so you find problems in four seconds instead of waiting for CI
 - Deploying, which is how a change actually reaches Databricks
 
-Right now one person can deploy. If that person's asleep, nothing ships.
-
 ---
 
 ## Part 1 — Opening a terminal
-
 ### Mac
-
 ⌘+Space, type `Terminal`, Enter. A window opens with a line ending in `%` or `$`. That's the prompt, waiting for you.
 
 ### Windows
-
 Start, type `PowerShell`, Enter. The prompt ends in `>`.
 
 ### Either
-
 If you use VS Code: **View → Terminal**. It opens inside whatever folder you have open, which is usually what you want.
 
 ### Your first command
-
 Type this, press Enter:
 
     pwd
 
-It prints where you are — something like `/Users/yourname` or `C:\Users\yourname`. That's your home folder.
+It prints where you are, something like `/Users/yourname` or `C:\Users\yourname`. That's your home folder.
 
 The terminal is always "in" a folder, and most confusion comes from being in the wrong one. When something says "file not found", check `pwd` first.
 
 ---
 
 ## Part 2 — Five commands that cover most of it
-
 | Command | What it does |
 |---|---|
 | `pwd` | print where I am |
@@ -58,18 +49,16 @@ The terminal is always "in" a folder, and most confusion comes from being in the
     cd Desktop
     pwd
 
-You should end up somewhere ending in `/Desktop`. If a folder name has a space in it, wrap it in quotes: `cd "NYC DOT Files"`.
+You should end up somewhere ending in `/Desktop`. If a folder name has a space in it, wrap it in quotes: `cd "NYC DOT Files"`. (For context, this is the folder name where I kept my local.)
 
-Type the first few letters of a folder and press Tab — it completes the name and saves you typos.
+Type the first few letters of a folder and press Tab, it completes the name and saves you typos.
 
 ---
 
 ## Part 3 — Installing the tools
-
 Three of them: `git`, `gh` (GitHub) and `databricks`.
 
 ### Mac
-
 You need Homebrew first, which is a program that installs other programs. See if you already have it:
 
     brew --version
@@ -81,7 +70,6 @@ Then:
     brew install git gh databricks
 
 ### Windows
-
 PowerShell has `winget` built in:
 
     winget install Git.Git
@@ -91,7 +79,6 @@ PowerShell has `winget` built in:
 > Nobody in the group has run these on Windows yet. If a package name is wrong, please fix this file rather than working around it.
 
 ### Check all three
-
 Close the terminal and open a new one first — newly installed programs only show up in a fresh terminal. Then:
 
     git --version
@@ -103,13 +90,11 @@ Three version numbers and you're done. "Command not found" means that one didn't
 ---
 
 ## Part 4 — Logging in to GitHub
-
     gh auth login
 
 It asks a few questions. Answer GitHub.com, HTTPS, yes to authenticate git, and login with a web browser. It gives you a code to paste into the page it opens.
 
 ### Check
-
     gh auth status
 
 Should say you're logged in as your username.
@@ -117,8 +102,7 @@ Should say you're logged in as your username.
 ---
 
 ## Part 5 — Getting the code
-
-This is separate from your Databricks Git folder. Both are real clones; this one is the one you can test and deploy from.
+This is separate from your Databricks Git folder. Both are real clones; this one is the one you can test and deploy from. This is how I did it.
 
     cd ~/Desktop
     git clone https://github.com/hyenalouise/nyc-mobility-pipeline.git
@@ -156,20 +140,18 @@ If `pip` or `python` isn't found, try `pip3` and `python3`.
 ---
 
 ## Part 7 — Logging in to Databricks
-
-Read this part slowly. It's where the mistakes are quiet.
+Read this part slowly. It's where the I also had some mistakes.
 
     databricks auth login --host https://dbc-cd77c839-62eb.cloud.databricks.com --profile crystal-workspace
 
 A browser opens, you log in, and it saves a profile called `crystal-workspace`.
 
 ### What a profile is
-
 A saved login for one workspace. You can have several, one per workspace, each with a name.
 
 Always pass `--profile`. Without it the CLI uses whichever profile is marked default, which may be a completely different workspace.
 
-That's not hypothetical. On 22 September a deploy ran without `--profile`, went to a personal workspace instead of the shared one, and failed with:
+I ran a deploy before without `--profile`, went to a personal workspace instead of the shared one, and failed with:
 
     Error: cannot create job: SQL warehouse 7d6db0d013d454fc does not exist
 
@@ -186,7 +168,6 @@ Lists every profile, its host, and whether it still works.
 Should show `Serverless Starter Warehouse`. If you're seeing a different warehouse than your teammates, you're pointed at the wrong workspace.
 
 ### Name your profiles
-
 Someone once hit Enter at the profile-name prompt with a command still sitting in the buffer, and ended up with a profile called `databricks warehouses list`. It works. It's confusing forever. Pass `--profile <name>` yourself.
 
 ---
@@ -209,7 +190,7 @@ The deploy stamps your current commit onto the job. Deploy from a half-edited fo
 
     databricks bundle validate --target dev --profile crystal-workspace
 
-Read the output — the workspace host, your user, the path. Confirm the host is the one you expect before going further. It ends with `Validation OK!` and changes nothing.
+Read the output, the workspace host, your user, the path. Confirm the host is the one you expect before going further. It ends with `Validation OK!` and changes nothing.
 
 If it says:
 
@@ -222,7 +203,6 @@ you're in the wrong folder. `cd` into the repository and try again.
     databricks bundle deploy --target dev --profile crystal-workspace
 
 What happens:
-
 1. `${bundle.git.commit}` is replaced with your current commit, in both the job's Git source and the `code_revision` parameter, so they can't disagree
 2. `${var.warehouse_id}` is replaced with the warehouse from `databricks.yml`
 3. Files upload to your own workspace folder
@@ -280,5 +260,3 @@ Once, at setup:
 - [ ] `python -m pytest tests -q` passes
 - [ ] `databricks auth profiles` lists `crystal-workspace`
 - [ ] `databricks bundle validate --target dev --profile crystal-workspace` says OK
-
-Six for six and you can deploy, and we stop depending on one person for it.
