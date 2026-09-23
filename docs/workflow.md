@@ -70,13 +70,14 @@ Say what changed and why, and what you ran to check it. Include counts if data i
 
 ### Reading the checks
 
-Three run on every pull request:
+Two run on every pull request:
 
 | Check | Fails when |
 |---|---|
 | Repository checks | a test fails, or a file breaks a naming or layout rule |
-| Local pipeline runs | the pipeline misbehaves (added by #116) |
 | PR links an issue | the description has no `Closes #N` |
+
+Worth knowing what these don't cover: neither one runs the pipeline. They check the code and the PR description, not whether the thing still works against data. A change can go green here and still break Bronze. Issue #116 is about closing that gap.
 
 Click into a failed one to see which test broke.
 
