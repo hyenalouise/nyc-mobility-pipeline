@@ -983,6 +983,19 @@ stale.
   `UNPAUSED`. An explicit value overrides development mode, so every sandbox
   would run on the timer. `tests/test_bundle_contract.py` fails if one is added.
 
+**Verified on the deployed dev job, 2026-09-23:**
+
+Deployed from `f5ae6e8` with `databricks bundle deploy --target dev`. On
+`[dev ina_magno] NYC Mobility Pipeline` (job `224133189973974`),
+`databricks jobs get` then showed:
+
+    schedule: pause_status PAUSED, quartz_cron_expression "0 0 6 ? * MON",
+              timezone_id America/New_York
+    git_commit and code_revision default: f5ae6e82002168d949c2efa1d1501711cc8746d4
+
+No run was started by the deploy; the latest run was still the one from before
+it.
+
 **Rejected alternatives:**
 
 - **A file arrival trigger.** The more accurate trigger for a monthly source,
