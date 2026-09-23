@@ -15,9 +15,44 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONPATH: src
+
 jobs:
   repository-checks:
     name: Repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install check dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # Only the lines this change adds. The tree carries pre-existing
+      # trailing whitespace in docs/, and reformatting it here would bury the
+      # change under unrelated diff noise.
+      - name: Check whitespace in the changed lines
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then base="$(git rev-parse HEAD~1 2>/dev/null || true)"; fi
+          if [ -z "$base" ]; then
+            echo "No base commit to compare against; nothing to check."
+            exit 0
+          fi
+          git diff --check "$base" HEAD
+
+      - name: Run tests and policy checks
+        run: python -m pytest tests -q
+
+  local-pipeline:
+    name: Local pipeline runs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,11 +62,76 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install check dependencies
+      - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Run tests and policy checks
-        run: python -m pytest tests -q
+      - name: Build a sample landing folder
+        run: |
+          python - <<'PY'
+          import datetime as dt, json, pathlib, duckdb
+
+          contract = json.loads(pathlib.Path("config/source_contract.json").read_text())
+          columns = contract["sources"]["green_taxi"]["expected_columns"]
+          landing = pathlib.Path("ci_landing/green_taxi")
+          landing.mkdir(parents=True, exist_ok=True)
+
+          row = [2, dt.datetime(2026, 3, 15, 9, 0), dt.datetime(2026, 3, 15, 9, 20), "N",
+                 1, 74, 42, 1, 3.2, 14.5, 0.5, 0.5, 2.0, 0.0, None, 1.0, 18.5, 1, 1, 0.0, 0.0]
+          bad = list(row)
+          bad[8] = -1.0  # trip_distance below zero: a blocking check
+
+          con = duckdb.connect()
+          con.execute("CREATE TABLE t (%s)" % ", ".join(
+              '"%s" %s' % (c["name"], c["type"]) for c in columns))
+          marks = ", ".join("?" * len(columns))
+          con.execute("INSERT INTO t SELECT %s FROM range(?)" % marks, row + [1500])
+          con.execute("COPY t TO 'ci_landing/green_taxi/green_tripdata_2026-03.parquet' (FORMAT PARQUET)")
+          con.execute("INSERT INTO t VALUES (%s)" % marks, bad)
+          con.execute("COPY t TO 'ci_broken.parquet' (FORMAT PARQUET)")
+          PY
+
+      - name: CLI starts and bootstraps its audit database
+        run: |
+          python -m nyc_mobility --version
+          python -m nyc_mobility history --state-dir ci_state
+
+      - name: A clean delivery passes and publishes
+        env:
+          NYC_MOBILITY_ENV: ci
+        run: |
+          python -m nyc_mobility run --source green_taxi \
+            --source-dir ci_landing --state-dir ci_state --json
+
+      - name: A rerun of the same input publishes no duplicate
+        env:
+          NYC_MOBILITY_ENV: ci
+        run: |
+          python -m nyc_mobility run --source green_taxi \
+            --source-dir ci_landing --state-dir ci_state
+          rows=$(python -m nyc_mobility manifest --source green_taxi \
+            --state-dir ci_state --json | python -c 'import json,sys; print(len(json.load(sys.stdin)))')
+          test "$rows" = "1" || { echo "::error::rerun produced $rows manifest rows, expected 1"; exit 1; }
+
+      - name: A bad delivery is refused with exit code 2
+        env:
+          NYC_MOBILITY_ENV: ci
+        run: |
+          mv ci_broken.parquet ci_landing/green_taxi/green_tripdata_2026-04.parquet
+          set +e
+          python -m nyc_mobility run --source green_taxi \
+            --source-dir ci_landing --state-dir ci_state --period 2026-04
+          status=$?
+          set -e
+          test "$status" = "2" || { echo "::error::expected exit 2, got $status"; exit 1; }
+
+      - name: The refused delivery was not published
+        env:
+          NYC_MOBILITY_ENV: ci
+        run: |
+          periods=$(python -m nyc_mobility manifest --source green_taxi \
+            --state-dir ci_state --json \
+            | python -c 'import json,sys; print(",".join(sorted(r["source_period"] for r in json.load(sys.stdin))))')
+          test "$periods" = "2026-03" || { echo "::error::manifest holds $periods, expected only 2026-03"; exit 1; }
 
   pr-description:
     name: PR links an issue

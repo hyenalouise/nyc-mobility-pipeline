@@ -1,0 +1,124 @@
+# Controlled deployment of the Databricks Asset Bundle.
+#
+# This workflow NEVER runs by itself. There is no push or pull_request
+# trigger: a human starts it, names the target, and types the target name
+# again to confirm. Automating a deployment path that nobody has performed by
+# hand would hide an unclear process rather than make it repeatable.
+#
+# Before the first real deploy, see docs/deployment.md. Two things are still
+# outstanding and this workflow will fail loudly, not silently, until they are
+# resolved:
+#   1. databricks.yml declares no `targets:` block.
+#   2. The repository has no DATABRICKS_HOST / DATABRICKS_TOKEN secrets.
+name: CD (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Bundle target to deploy"
+        required: true
+        type: choice
+        options: [dev, prod]
+      confirm:
+        description: "Type the target name again to confirm"
+        required: true
+        type: string
+      validate_only:
+        description: "Validate the bundle and stop without deploying"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Requires the reviewers configured on this GitHub environment to approve
+    # before any step runs, and is where the secrets are scoped.
+    environment: ${{ inputs.target }}
+    steps:
+      - name: Confirm the target
+        run: |
+          if [ "${{ inputs.confirm }}" != "${{ inputs.target }}" ]; then
+            echo "::error::Confirmation '${{ inputs.confirm }}' does not match target '${{ inputs.target }}'."
+            exit 1
+          fi
+
+      - name: Require the deployment secrets
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          missing=""
+          [ -z "$DATABRICKS_HOST" ]  && missing="$missing DATABRICKS_HOST"
+          [ -z "$DATABRICKS_TOKEN" ] && missing="$missing DATABRICKS_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository or environment secret(s):$missing. See docs/deployment.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # CI already ran on the commit, but a deploy is the last point at which
+      # stopping is cheap. Re-running the checks here costs a minute and makes
+      # "was this version tested?" answerable from the deployment log alone.
+      - name: Re-run the checks on the commit being deployed
+        run: |
+          python -m pip install -r requirements-dev.txt
+          PYTHONPATH=src python -m pytest tests -q
+
+      - name: Install the Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate the bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate --target "${{ inputs.target }}"
+
+      - name: Stop here when validating only
+        if: ${{ inputs.validate_only }}
+        run: |
+          echo "validate_only was set. Nothing was deployed."
+          echo "Re-run with validate_only unchecked to deploy."
+
+      - name: Deploy the bundle
+        if: ${{ !inputs.validate_only }}
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle deploy --target "${{ inputs.target }}"
+
+      # Deploying updates the job definition. It does not run the pipeline and
+      # does not prove the deployed version works. Verification is a separate,
+      # deliberate step -- see docs/deployment.md, "After deploying".
+      - name: Report what to verify
+        if: ${{ !inputs.validate_only }}
+        run: |
+          {
+            echo "### Deployed to ${{ inputs.target }}"
+            echo ""
+            echo "Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "The job definition was updated. Nothing has run yet. Next:"
+            echo ""
+            echo "1. Trigger the job in Databricks, or run \`databricks bundle run NYC_Mobility_Pipeline --target ${{ inputs.target }}\`."
+            echo "2. Confirm every gate task succeeded."
+            echo "3. Check \`01-control.gate_status\` for the latest run."
+            echo "4. Confirm \`data_quality_results.code_revision\` matches this commit."
+          } >> "$GITHUB_STEP_SUMMARY"
