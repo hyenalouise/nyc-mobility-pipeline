@@ -7,9 +7,31 @@ import duckdb
 
 
 CONTRACT_PATH = Path("config/source_contract.json")
-DEFAULT_EVIDENCE_PATH = Path(
-    "evidence/proof/source-validation/results.json"
-)
+
+# Green Taxi keeps its original, already-committed filename (results.json,
+# referenced by docs/duckdb/evidence.md) so this fix stays backward
+# compatible. Any other source falls back to a per-source filename instead
+# of sharing that path -- which is what let a taxi_zones run silently
+# overwrite Green Taxi's committed evidence before this fix.
+DEFAULT_EVIDENCE_PATHS = {
+    "green_taxi": Path("evidence/proof/source-validation/results.json"),
+}
+
+
+def default_evidence_path(source):
+    return DEFAULT_EVIDENCE_PATHS.get(
+        source,
+        Path(f"evidence/proof/source-validation/{source}_results.json"),
+    )
+
+# Local view name each source is loaded into. Kept separate per source so a
+# --source green_taxi run and a --source taxi_zones run can never silently
+# read the wrong view if this module is ever extended to check more than
+# one source in the same process.
+VIEW_NAMES = {
+    "green_taxi": "green_taxi_source",
+    "taxi_zones": "taxi_zones_source",
+}
 
 # Exit codes are a supported interface: CI (.github/workflows/ci.yml) and
 # any orchestrating job branch on these values, not just on zero-vs-nonzero.
@@ -23,8 +45,6 @@ EXIT_INPUT_UNAVAILABLE = 3
 def load_json(path):
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
-
-
 
 
 def sql_list(values):
@@ -105,12 +125,13 @@ def scalar(connection, query):
     return connection.execute(query).fetchone()[0]
 
 
-def create_source_view(connection, inputs):
+def create_green_taxi_view(connection, inputs):
+    """Green Taxi ships as parquet, one file per month, unioned by name."""
     input_list = sql_list(inputs)
 
     connection.execute(
         f"""
-        CREATE OR REPLACE TEMP VIEW green_taxi_source AS
+        CREATE OR REPLACE TEMP VIEW {VIEW_NAMES['green_taxi']} AS
         SELECT *
         FROM read_parquet(
             {input_list},
@@ -121,30 +142,56 @@ def create_source_view(connection, inputs):
     )
 
 
-def get_columns(connection):
-    rows = connection.execute(
+def create_taxi_zones_view(connection, inputs):
+    """Taxi Zones ships as a single CSV snapshot with a header row."""
+    input_list = sql_list(inputs)
+
+    connection.execute(
+        f"""
+        CREATE OR REPLACE TEMP VIEW {VIEW_NAMES['taxi_zones']} AS
+        SELECT *
+        FROM read_csv(
+            {input_list},
+            header = true,
+            filename = true
+        )
         """
+    )
+
+
+# Keyed by --source. Each entry pairs the loader with the view it created,
+# so main() does not need a chain of if/elif to pick the right reader.
+SOURCE_LOADERS = {
+    "green_taxi": create_green_taxi_view,
+    "taxi_zones": create_taxi_zones_view,
+}
+
+
+def get_columns(connection, view_name):
+    rows = connection.execute(
+        f"""
         DESCRIBE
         SELECT *
-        FROM green_taxi_source
+        FROM {view_name}
         """
     ).fetchall()
 
     return [row[0] for row in rows]
 
 
-def run_checks(connection, contract):
+def run_green_taxi_checks(connection, contract):
+    view = VIEW_NAMES["green_taxi"]
     results = []
 
     total_rows = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         """,
     )
 
-    columns = get_columns(connection)
+    columns = get_columns(connection, view)
 
     required_columns = contract["required_columns"]
 
@@ -229,9 +276,9 @@ def run_checks(connection, contract):
     # 5. Pickup timestamp not null
     pickup_nulls = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE lpep_pickup_datetime IS NULL
         """,
     )
@@ -251,9 +298,9 @@ def run_checks(connection, contract):
     # 6. Drop-off timestamp not null
     dropoff_nulls = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE lpep_dropoff_datetime IS NULL
         """,
     )
@@ -273,9 +320,9 @@ def run_checks(connection, contract):
     # 7. Trip distance nonnegative
     negative_distance = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE trip_distance < 0
         """,
     )
@@ -291,11 +338,13 @@ def run_checks(connection, contract):
             details="Trip distance must be zero or greater.",
         )
     )
+
+    # 7b. Fare amount nonnegative
     negative_fare_amount = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE fare_amount < 0
         """,
     )
@@ -318,9 +367,9 @@ def run_checks(connection, contract):
     # 8. Drop-off after pickup
     invalid_trip_order = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE lpep_pickup_datetime IS NOT NULL
           AND lpep_dropoff_datetime IS NOT NULL
           AND lpep_dropoff_datetime
@@ -352,7 +401,7 @@ def run_checks(connection, contract):
         connection,
         f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE lpep_pickup_datetime IS NOT NULL
           AND (
                 lpep_pickup_datetime
@@ -384,9 +433,9 @@ def run_checks(connection, contract):
     # 10. Passenger count above 8
     high_passenger_count = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE passenger_count > 8
         """,
     )
@@ -409,9 +458,9 @@ def run_checks(connection, contract):
     # 11. VendorID domain
     invalid_vendor = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE VendorID IS NOT NULL
           AND VendorID NOT IN (1, 2, 6)
         """,
@@ -434,9 +483,9 @@ def run_checks(connection, contract):
     # 12. Payment type domain
     invalid_payment_type = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE payment_type IS NOT NULL
           AND payment_type NOT IN (
               0, 1, 2, 3, 4, 5, 6
@@ -461,9 +510,9 @@ def run_checks(connection, contract):
     # 13. RatecodeID domain
     invalid_ratecode = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE RatecodeID IS NOT NULL
           AND RatecodeID NOT IN (
               1, 2, 3, 4, 5, 6, 99
@@ -489,9 +538,9 @@ def run_checks(connection, contract):
     # 14. Pickup and drop-off LocationID ranges
     invalid_location_ids = scalar(
         connection,
-        """
+        f"""
         SELECT COUNT(*)
-        FROM green_taxi_source
+        FROM {view}
         WHERE (
                 PULocationID IS NOT NULL
                 AND (
@@ -530,7 +579,7 @@ def run_checks(connection, contract):
     # Do not include the generated filename column.
     duplicate_occurrences = scalar(
         connection,
-        """
+        f"""
         SELECT COALESCE(
             SUM(duplicate_count - 1),
             0
@@ -538,7 +587,7 @@ def run_checks(connection, contract):
         FROM (
             SELECT
                 COUNT(*) AS duplicate_count
-            FROM green_taxi_source
+            FROM {view}
             GROUP BY
                 VendorID,
                 lpep_pickup_datetime,
@@ -584,9 +633,237 @@ def run_checks(connection, contract):
     return results
 
 
-def print_results(results):
+def run_taxi_zones_checks(connection, contract):
+    """Taxi Zones is a small, static reference snapshot (265 rows, one row
+    per LocationID). It has no reporting window and no per-trip business
+    rules, so its check set is deliberately smaller than Green Taxi's --
+    the shared framework (create_result/calculate_status) is reused as-is;
+    only the measure queries below are source-specific, per #124's scope.
+    """
+    view = VIEW_NAMES["taxi_zones"]
+    results = []
+
+    total_rows = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        """,
+    )
+
+    columns = get_columns(connection, view)
+
+    required_columns = contract["required_columns"]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in columns
+    ]
+
+    # 1. Source readable
+    results.append(
+        create_result(
+            check_name="source_readable",
+            check_type="AVAILABILITY",
+            severity="BLOCK",
+            fail_count=0,
+            total_count=1,
+            threshold_pct=0.0,
+            details=(
+                "DuckDB successfully opened the configured "
+                "Taxi Zones source file."
+            ),
+        )
+    )
+
+    # 2. Source is not empty
+    results.append(
+        create_result(
+            check_name="row_count_not_empty",
+            check_type="VOLUME",
+            severity="BLOCK",
+            fail_count=1 if total_rows == 0 else 0,
+            total_count=1,
+            threshold_pct=0.0,
+            details=f"Observed source rows: {total_rows}.",
+        )
+    )
+
+    # 3. Row-count floor. Taxi Zones is a complete snapshot, not an
+    # incremental feed, so the floor is the full expected row count (265),
+    # not a nominal "at least 1" like Green Taxi's monthly files.
+    row_count_floor = contract["row_count_floor"]
+
+    results.append(
+        create_result(
+            check_name="row_count_floor",
+            check_type="VOLUME",
+            severity="BLOCK",
+            fail_count=(
+                1
+                if total_rows < row_count_floor
+                else 0
+            ),
+            total_count=1,
+            threshold_pct=0.0,
+            details=(
+                f"Observed rows: {total_rows}; "
+                f"required minimum: {row_count_floor}."
+            ),
+        )
+    )
+
+    # 4. Required source columns
+    results.append(
+        create_result(
+            check_name="required_columns",
+            check_type="SCHEMA",
+            severity="BLOCK",
+            fail_count=len(missing_columns),
+            total_count=len(required_columns),
+            threshold_pct=0.0,
+            details=(
+                "All required columns are present."
+                if not missing_columns
+                else f"Missing columns: {missing_columns}."
+            ),
+        )
+    )
+
+    # Stop safely if later checks cannot reference required columns.
+    if missing_columns:
+        return results
+
+    # 5. LocationID not null. LocationID is the business key; a null here
+    # cannot be joined against anywhere downstream.
+    location_id_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        WHERE LocationID IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="location_id_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=location_id_nulls,
+            total_count=total_rows,
+            threshold_pct=0.0,
+            details="LocationID is required.",
+        )
+    )
+
+    # 6. LocationID uniqueness. A reference table maps one zone per id;
+    # a duplicate id makes any join against it ambiguous.
+    duplicate_location_ids = scalar(
+        connection,
+        f"""
+        SELECT COALESCE(
+            SUM(duplicate_count - 1),
+            0
+        )
+        FROM (
+            SELECT
+                LocationID,
+                COUNT(*) AS duplicate_count
+            FROM {view}
+            GROUP BY LocationID
+            HAVING COUNT(*) > 1
+        )
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="location_id_unique",
+            check_type="DUPLICATE",
+            severity="BLOCK",
+            fail_count=duplicate_location_ids,
+            total_count=total_rows,
+            threshold_pct=0.0,
+            details="Every LocationID must appear exactly once.",
+        )
+    )
+
+    # 7. LocationID is a valid integer in range. Not-null and uniqueness
+    # alone let a non-numeric value like "abc" through, since DuckDB's CSV
+    # sniffer widens the whole column to VARCHAR the moment one row is
+    # non-numeric, and a string is still non-null and still unique.
+    # TRY_CAST catches both a value that cannot be an integer at all and one
+    # that parses but falls outside the real 1-265 LocationID range, mirroring
+    # Green Taxi's location_id_range check.
+    invalid_location_id = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        WHERE LocationID IS NOT NULL
+          AND (
+                TRY_CAST(LocationID AS INTEGER) IS NULL
+                OR TRY_CAST(LocationID AS INTEGER) < 1
+                OR TRY_CAST(LocationID AS INTEGER) > 265
+                OR TRY_CAST(LocationID AS DOUBLE) <> TRY_CAST(LocationID AS INTEGER)
+              )
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="location_id_valid_integer",
+            check_type="RANGE",
+            severity="BLOCK",
+            fail_count=invalid_location_id,
+            total_count=total_rows,
+            threshold_pct=0.0,
+            details=(
+                "LocationID must be an integer between 1 and 265, "
+                "since it is the key trips join against."
+            ),
+        )
+    )
+
+    # 7. Borough not null. Every zone must resolve to a named borough for
+    # any downstream aggregation by borough to be meaningful.
+    borough_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        WHERE Borough IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="borough_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=borough_nulls,
+            total_count=total_rows,
+            threshold_pct=0.0,
+            details="Borough is required.",
+        )
+    )
+
+    return results
+
+
+# Keyed by --source. Both functions share the exact same signature and
+# result shape, so main() can dispatch without a chain of if/elif.
+CHECK_RUNNERS = {
+    "green_taxi": run_green_taxi_checks,
+    "taxi_zones": run_taxi_zones_checks,
+}
+
+
+def print_results(results, source):
     print(
-        "\nDUCKDB PRE-INGESTION GATE: green_taxi"
+        f"\nDUCKDB PRE-INGESTION GATE: {source}"
     )
     print("=" * 72)
 
@@ -603,6 +880,7 @@ def print_results(results):
 
 def write_evidence(
     path,
+    source,
     inputs,
     results,
     gate_result,
@@ -614,7 +892,7 @@ def write_evidence(
     )
 
     evidence = {
-        "source": "green_taxi",
+        "source": source,
         "inputs": inputs,
         "check_count": len(results),
         "gate_result": gate_result,
@@ -634,9 +912,16 @@ def write_evidence(
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
-            "Validate Green Taxi source files locally "
+            "Validate a Green Taxi or Taxi Zones source locally "
             "with DuckDB before Bronze ingestion."
         )
+    )
+
+    parser.add_argument(
+        "--source",
+        default="green_taxi",
+        choices=sorted(CHECK_RUNNERS.keys()),
+        help="Which declared source contract to validate against.",
     )
 
     parser.add_argument(
@@ -644,14 +929,19 @@ def parse_arguments():
         nargs="+",
         required=True,
         help=(
-            "One or more local parquet paths or glob patterns."
+            "One or more local paths or glob patterns for the chosen "
+            "--source (parquet for green_taxi, csv for taxi_zones)."
         ),
     )
 
     parser.add_argument(
         "--evidence",
-        default=str(DEFAULT_EVIDENCE_PATH),
-        help="Path for generated JSON evidence.",
+        default=None,
+        help=(
+            "Path for generated JSON evidence. Defaults to a path specific "
+            "to --source, so different sources never share, and silently "
+            "overwrite, one evidence file."
+        ),
     )
 
     return parser.parse_args()
@@ -664,9 +954,9 @@ def main():
         CONTRACT_PATH
     )
 
-    if "green_taxi" not in contract_registry:
+    if args.source not in contract_registry:
         print(
-            "MISSING_CONTRACT: green_taxi is not "
+            f"MISSING_CONTRACT: {args.source} is not "
             "declared in config/source_contract.json"
         )
         return EXIT_INVALID_CONFIGURATION
@@ -675,7 +965,7 @@ def main():
 
     if not inputs:
         print(
-            "MISSING_INPUT: No Green Taxi inputs "
+            f"MISSING_INPUT: No {args.source} inputs "
             "were provided."
         )
         return EXIT_INVALID_CONFIGURATION
@@ -697,8 +987,10 @@ def main():
 
     connection = duckdb.connect()
 
+    load_view = SOURCE_LOADERS[args.source]
+
     try:
-        create_source_view(
+        load_view(
             connection,
             inputs,
         )
@@ -708,12 +1000,14 @@ def main():
         connection.close()
         return EXIT_INPUT_UNAVAILABLE
 
+    run_checks = CHECK_RUNNERS[args.source]
+
     results = run_checks(
         connection,
-        contract_registry["green_taxi"],
+        contract_registry[args.source],
     )
 
-    print_results(results)
+    print_results(results, args.source)
 
     blocking_failures = [
         result
@@ -731,10 +1025,15 @@ def main():
     print(f"\nGate result: {gate_result}")
     print(f"Exit code: {exit_code}")
 
-    evidence_path = Path(args.evidence)
+    evidence_path = (
+        Path(args.evidence)
+        if args.evidence
+        else default_evidence_path(args.source)
+    )
 
     write_evidence(
         path=evidence_path,
+        source=args.source,
         inputs=inputs,
         results=results,
         gate_result=gate_result,

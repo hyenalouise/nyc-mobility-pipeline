@@ -18,5 +18,15 @@
       "start": "2026-03-01",
       "end": "2026-05-31"
     }
+  },
+ "taxi_zones": {
+    "required_columns": [
+      "LocationID",
+      "Borough",
+      "Zone",
+      "service_zone"
+    ],
+    "row_count_floor": 265
   }
 }
+
