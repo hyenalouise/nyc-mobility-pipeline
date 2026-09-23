@@ -33,6 +33,210 @@ jobs:
       - name: Run tests and policy checks
         run: python -m pytest tests -q
 
+  local-source-gate:
+    name: Local source-gate runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # The column set is VALIDATED against config/source_contract.json's
+      # required_columns (missing_from_sample below), not generated purely
+      # from it: source_gate.py's WARN-severity checks (passenger_count,
+      # payment_type, RatecodeID, ...) reference columns the contract never
+      # marks required, and DuckDB raises a BinderException the moment one
+      # of those runs against a narrower sample. known_types is the fixed
+      # superset those checks need; the contract only has to be a subset of
+      # it, and a newly required contract column still fails this build
+      # step until it's added here. Rows are distinct (pickup time shifts
+      # per row) on purpose: identical rows would trip the gate's own
+      # full_source_row_duplicate check and produce a false BLOCKED.
+      - name: Build sample landing files
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import json
+          import pathlib
+
+          import duckdb
+
+          contract = json.loads(
+              pathlib.Path("config/source_contract.json").read_text()
+          )
+          required = contract["green_taxi"]["required_columns"]
+
+          known_types = {
+              "VendorID": "INTEGER",
+              "lpep_pickup_datetime": "TIMESTAMP",
+              "lpep_dropoff_datetime": "TIMESTAMP",
+              "store_and_fwd_flag": "VARCHAR",
+              "RatecodeID": "BIGINT",
+              "PULocationID": "INTEGER",
+              "DOLocationID": "INTEGER",
+              "passenger_count": "BIGINT",
+              "trip_distance": "DOUBLE",
+              "fare_amount": "DOUBLE",
+              "extra": "DOUBLE",
+              "mta_tax": "DOUBLE",
+              "tip_amount": "DOUBLE",
+              "tolls_amount": "DOUBLE",
+              "ehail_fee": "DOUBLE",
+              "improvement_surcharge": "DOUBLE",
+              "total_amount": "DOUBLE",
+              "payment_type": "BIGINT",
+              "trip_type": "BIGINT",
+              "congestion_surcharge": "DOUBLE",
+              "cbd_congestion_fee": "DOUBLE",
+          }
+          columns = [(name, known_types[name]) for name in known_types]
+          missing_from_sample = set(required) - {name for name, _ in columns}
+          if missing_from_sample:
+              raise SystemExit(
+                  "Sample builder is missing contract-required column(s): "
+                  f"{sorted(missing_from_sample)}. Add them to known_types "
+                  "above before this sample can stand in for a real delivery."
+              )
+
+          def make_row(i):
+              pickup = dt.datetime(2026, 3, 15, 9, 0) + dt.timedelta(minutes=i)
+              dropoff = pickup + dt.timedelta(minutes=12)
+              return [
+                  2, pickup, dropoff, "N", 1, 74 + (i % 20), 42 + (i % 15), 1,
+                  round(3.2 + i * 0.01, 2), round(14.5 + i * 0.1, 2),
+                  0.5, 0.5, 2.0, 0.0, None, 1.0, round(18.5 + i * 0.1, 2),
+                  1, 1, 0.0, 0.0,
+              ]
+
+          landing = pathlib.Path("ci_landing")
+          landing.mkdir(parents=True, exist_ok=True)
+
+          con = duckdb.connect()
+          con.execute(
+              "CREATE TABLE t (%s)"
+              % ", ".join('"%s" %s' % c for c in columns)
+          )
+          marks = ", ".join("?" * len(columns))
+          for i in range(50):
+              con.execute(f"INSERT INTO t VALUES ({marks})", make_row(i))
+          con.execute(
+              "COPY t TO 'ci_landing/green_tripdata_2026-03.parquet' "
+              "(FORMAT PARQUET)"
+          )
+
+          bad_row = make_row(0)
+          column_names = [name for name, _ in columns]
+          trip_distance_index = column_names.index("trip_distance")
+          bad_row[trip_distance_index] = -1.0  # a BLOCK-severity check
+          con.execute(
+              "CREATE TABLE b (%s)"
+              % ", ".join('"%s" %s' % c for c in columns)
+          )
+          con.execute(f"INSERT INTO b VALUES ({marks})", bad_row)
+          con.execute("COPY b TO 'ci_bad_delivery.parquet' (FORMAT PARQUET)")
+          PY
+
+      - name: A clean delivery is accepted
+        run: |
+          python src/ingestion/source_gate.py \
+            --input ci_landing/green_tripdata_2026-03.parquet \
+            --evidence ci_evidence/clean.json
+
+      - name: The clean delivery's evidence has no failed checks
+        run: |
+          python - <<'PY'
+          import json
+
+          evidence = json.loads(open("ci_evidence/clean.json").read())
+          assert evidence["gate_result"] == "ACCEPTED", evidence["gate_result"]
+          assert evidence["exit_code"] == 0, evidence["exit_code"]
+          failing = [r["check_name"] for r in evidence["results"] if r["status"] == "FAIL"]
+          assert not failing, failing
+          print("Clean evidence is ACCEPTED with no failed checks.")
+          PY
+
+      - name: A bad delivery is refused with exit code 1
+        run: |
+          set +e
+          python src/ingestion/source_gate.py \
+            --input ci_bad_delivery.parquet \
+            --evidence ci_evidence/bad.json
+          status=$?
+          set -e
+          test "$status" = "1" || { echo "::error::expected exit 1 (BLOCKED), got $status"; exit 1; }
+
+      - name: The refused delivery's evidence names the failing check
+        run: |
+          python - <<'PY'
+          import json
+
+          evidence = json.loads(open("ci_evidence/bad.json").read())
+          assert evidence["gate_result"] == "BLOCKED", evidence["gate_result"]
+          failing = [r["check_name"] for r in evidence["results"] if r["status"] == "FAIL"]
+          assert "trip_distance_non_negative" in failing, failing
+          print("Evidence correctly names the failing check:", failing)
+          PY
+
+      # source_gate.py is a stateless, single-shot validator -- it has no
+      # manifest or persisted run history, so it cannot itself prove a
+      # *rerun* skips publishing a duplicate the way a stateful CLI could.
+      # What it can prove, and what this asserts, is that the same input
+      # produces byte-identical evidence every time: the gate's verdict is a
+      # pure function of the file, not of when or how many times it runs.
+      # Duplicate-safe publishing itself is Bronze's job, via the
+      # content-hash MERGE key documented in docs/decisions.md.
+      - name: Rerunning the same clean delivery is deterministic
+        run: |
+          python src/ingestion/source_gate.py \
+            --input ci_landing/green_tripdata_2026-03.parquet \
+            --evidence ci_evidence/clean_rerun.json
+          diff ci_evidence/clean.json ci_evidence/clean_rerun.json \
+            || { echo "::error::same input produced different evidence on rerun"; exit 1; }
+
+      - name: A missing delivery is refused, not silently skipped
+        run: |
+          set +e
+          python src/ingestion/source_gate.py \
+            --input "ci_landing/does_not_exist_*.parquet" \
+            --evidence ci_evidence/missing.json
+          status=$?
+          set -e
+          test "$status" = "3" || { echo "::error::expected exit 3 (missing/unreadable input), got $status"; exit 1; }
+
+      # This repo has no CI credentials for Databricks (by design -- see
+      # docs/ingestion.md), so Bronze cannot actually run here, and nothing
+      # below inspects a real published-state artifact. What this proves is
+      # narrower and simulated: that a step gated on the prior step's
+      # outcome via continue-on-error + steps.<id>.outcome never reaches a
+      # placeholder publish step when the gate is BLOCKED. It does not prove
+      # the real Bronze loader itself refuses a blocked delivery -- treat
+      # this as evidence for the gating *pattern* a real job must use, not
+      # for the Bronze publish path itself.
+      - name: Run the gate on a bad delivery (publish-gating check)
+        id: gate_bad
+        continue-on-error: true
+        run: |
+          python src/ingestion/source_gate.py \
+            --input ci_bad_delivery.parquet \
+            --evidence ci_evidence/bad_for_publish_check.json
+
+      - name: Simulated Bronze publish (would run here)
+        if: steps.gate_bad.outcome == 'success'
+        run: |
+          echo "::error::The simulated Bronze publish step ran even though the gate blocked this delivery."
+          exit 1
+
+      - name: Confirm the blocked gate prevented the simulated publish
+        if: steps.gate_bad.outcome == 'failure'
+        run: |
+          echo "Gate step outcome was '${{ steps.gate_bad.outcome }}'; a real job conditioned the same way never reaches Bronze. This is a simulated publish step, not the real Bronze loader."
+
   pr-description:
     name: PR links an issue
     if: github.event_name == 'pull_request'

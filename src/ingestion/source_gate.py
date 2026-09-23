@@ -33,6 +33,14 @@ VIEW_NAMES = {
     "taxi_zones": "taxi_zones_source",
 }
 
+# Exit codes are a supported interface: CI (.github/workflows/ci.yml) and
+# any orchestrating job branch on these values, not just on zero-vs-nonzero.
+# Keep this table and docs/duckdb/source_gate.md in sync with each other.
+EXIT_ACCEPTED = 0
+EXIT_BLOCKED = 1
+EXIT_INVALID_CONFIGURATION = 2
+EXIT_INPUT_UNAVAILABLE = 3
+
 
 def load_json(path):
     with path.open("r", encoding="utf-8") as file:
@@ -799,6 +807,7 @@ def run_taxi_zones_checks(connection, contract):
                 TRY_CAST(LocationID AS INTEGER) IS NULL
                 OR TRY_CAST(LocationID AS INTEGER) < 1
                 OR TRY_CAST(LocationID AS INTEGER) > 265
+                OR TRY_CAST(LocationID AS DOUBLE) <> TRY_CAST(LocationID AS INTEGER)
               )
         """,
     )
@@ -950,9 +959,16 @@ def main():
             f"MISSING_CONTRACT: {args.source} is not "
             "declared in config/source_contract.json"
         )
-        return 2
+        return EXIT_INVALID_CONFIGURATION
 
     inputs = args.input
+
+    if not inputs:
+        print(
+            f"MISSING_INPUT: No {args.source} inputs "
+            "were provided."
+        )
+        return EXIT_INVALID_CONFIGURATION
 
     network_prefixes = (
         "http://",
@@ -967,14 +983,7 @@ def main():
                 "NETWORK_INPUT_NOT_ALLOWED: "
                 "Only local files may be validated."
             )
-            return 2
-
-    if not inputs:
-        print(
-            f"MISSING_INPUT: No {args.source} inputs "
-            "were provided."
-        )
-        return 2
+            return EXIT_INVALID_CONFIGURATION
 
     connection = duckdb.connect()
 
@@ -989,7 +998,7 @@ def main():
         print("MISSING_OR_UNREADABLE_INPUT")
         print(str(error))
         connection.close()
-        return 3
+        return EXIT_INPUT_UNAVAILABLE
 
     run_checks = CHECK_RUNNERS[args.source]
 
@@ -1008,10 +1017,10 @@ def main():
 
     if blocking_failures:
         gate_result = "BLOCKED"
-        exit_code = 1
+        exit_code = EXIT_BLOCKED
     else:
         gate_result = "ACCEPTED"
-        exit_code = 0
+        exit_code = EXIT_ACCEPTED
 
     print(f"\nGate result: {gate_result}")
     print(f"Exit code: {exit_code}")
