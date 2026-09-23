@@ -1,0 +1,88 @@
+{
+  "source": "taxi_zones",
+  "inputs": [
+    "broken_zones.csv"
+  ],
+  "check_count": 7,
+  "gate_result": "BLOCKED",
+  "exit_code": 1,
+  "results": [
+    {
+      "check_name": "source_readable",
+      "check_type": "AVAILABILITY",
+      "severity": "BLOCK",
+      "status": "PASS",
+      "fail_count": 0,
+      "total_count": 1,
+      "fail_pct": 0.0,
+      "threshold_pct": 0.0,
+      "details": "DuckDB successfully opened the configured Taxi Zones source file."
+    },
+    {
+      "check_name": "row_count_not_empty",
+      "check_type": "VOLUME",
+      "severity": "BLOCK",
+      "status": "PASS",
+      "fail_count": 0,
+      "total_count": 1,
+      "fail_pct": 0.0,
+      "threshold_pct": 0.0,
+      "details": "Observed source rows: 7."
+    },
+    {
+      "check_name": "row_count_floor",
+      "check_type": "VOLUME",
+      "severity": "BLOCK",
+      "status": "FAIL",
+      "fail_count": 1,
+      "total_count": 1,
+      "fail_pct": 100.0,
+      "threshold_pct": 0.0,
+      "details": "Observed rows: 7; required minimum: 265."
+    },
+    {
+      "check_name": "required_columns",
+      "check_type": "SCHEMA",
+      "severity": "BLOCK",
+      "status": "PASS",
+      "fail_count": 0,
+      "total_count": 4,
+      "fail_pct": 0.0,
+      "threshold_pct": 0.0,
+      "details": "All required columns are present."
+    },
+    {
+      "check_name": "location_id_not_null",
+      "check_type": "NOT_NULL",
+      "severity": "BLOCK",
+      "status": "FAIL",
+      "fail_count": 1,
+      "total_count": 7,
+      "fail_pct": 14.2857,
+      "threshold_pct": 0.0,
+      "details": "LocationID is required."
+    },
+    {
+      "check_name": "location_id_unique",
+      "check_type": "DUPLICATE",
+      "severity": "BLOCK",
+      "status": "FAIL",
+      "fail_count": 2,
+      "total_count": 7,
+      "fail_pct": 28.5714,
+      "threshold_pct": 0.0,
+      "details": "Every LocationID must appear exactly once."
+    },
+    {
+      "check_name": "borough_not_null",
+      "check_type": "NOT_NULL",
+      "severity": "BLOCK",
+      "status": "FAIL",
+      "fail_count": 1,
+      "total_count": 7,
+      "fail_pct": 14.2857,
+      "threshold_pct": 0.0,
+      "details": "Borough is required."
+    }
+  ]
+}
