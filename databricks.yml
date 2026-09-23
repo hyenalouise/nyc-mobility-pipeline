@@ -335,3 +335,11 @@ resources:
       queue:
         enabled: true
       performance_target: PERFORMANCE_OPTIMIZED
+
+      email_notifications:
+        on_failure:
+          - briana.capul@ftwfoundation.org
+          - hazelle.cuevas@ftwfoundation.org
+          - crystal.manas@ftwfoundation.org
+          - gabrielle.torres@ftwfoundation.org
+          - ina.magno@ftwfoundation.org

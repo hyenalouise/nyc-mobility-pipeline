@@ -10,7 +10,7 @@ How to wire the pipeline as one multi-task Databricks **Job**. A job is used rat
 | Source | Git provider, this repository, branch `main` |
 | Compute | One shared job cluster for the run, or serverless. SQL file tasks also need a SQL warehouse. |
 | Parameters | `landing_path` (defaults to the Volume path), `reprocess` (`false`) |
-| Notifications | Email on failure |
+| Notifications | Email on failure, sent to the whole team (see below) |
 
 Using the Git provider rather than a personal Git folder means every run uses reviewed code and records the commit it ran.
 
@@ -66,6 +66,29 @@ WHERE run_id = dq_run_id;
 ```
 
 Placeholder files already end with a `raise_error`, so an unimplemented stage fails instead of looking successful. Remove that block when the query is written.
+
+## Failure notifications
+
+`email_notifications.on_failure` in `databricks.yml` sends an email to the
+whole team the moment any task fails — not just whoever happens to open
+Databricks and notice. This exists because of the Day 9 incident: a Silver
+gate blocked correctly, but with no notification, a stale dashboard reached
+management before the team knew anything had failed.
+
+Sent to every team member rather than one shared inbox, since one person
+being unavailable should not mean nobody finds out:
+
+- briana.capul@ftwfoundation.org
+- hazelle.cuevas@ftwfoundation.org
+- crystal.manas@ftwfoundation.org
+- gabrielle.torres@ftwfoundation.org
+- ina.magno@ftwfoundation.org
+
+No duration-based warning is configured, since no duration threshold is
+currently set for this job. A blocked gate and a genuine task crash both
+trigger the same notification for now; distinguishing them would need logic
+beyond Databricks' native job-level notifications, which is out of scope
+here (see #131).
 
 ## Proof runs
 
