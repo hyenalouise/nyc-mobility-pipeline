@@ -112,6 +112,11 @@ Approve, comment, or request changes. Do not approve your own.
 
 Only needed for two things. Worth learning for both.
 
+> **Never used a terminal?** [`docs/terminal_setup.md`](terminal_setup.md) walks
+> through it from zero — opening one, moving between folders, installing the
+> tools, and checking each step worked. This section is the summary; that is the
+> lesson.
+
 ### 3.1 Opening a terminal
 
 - **Mac:** Terminal, or the terminal built into VS Code
