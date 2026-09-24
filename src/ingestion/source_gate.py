@@ -31,7 +31,18 @@ def default_evidence_path(source):
 VIEW_NAMES = {
     "green_taxi": "green_taxi_source",
     "taxi_zones": "taxi_zones_source",
+    "weather": "weather_source",
 }
+
+# Weather's hourly data arrives as four parallel arrays (hourly.time,
+# .temperature_2m, .precipitation, .weather_code), not rows. Rather than
+# writing array-indexing SQL for every row-level check, create_weather_view
+# also builds this second view -- one row per hour, via UNNEST -- so every
+# row-level check below is the same plain SQL as Green Taxi's, and
+# get_columns()/create_result() stay unaware weather is array-shaped at all.
+# Not registered in VIEW_NAMES: it's an internal detail of the weather
+# loader, not a --source choice of its own.
+WEATHER_HOURLY_VIEW = "weather_hourly_source"
 
 # Exit codes are a supported interface: CI (.github/workflows/ci.yml) and
 # any orchestrating job branch on these values, not just on zero-vs-nonzero.
@@ -159,11 +170,43 @@ def create_taxi_zones_view(connection, inputs):
     )
 
 
+def create_weather_view(connection, inputs):
+    """Weather ships as one landed JSON response per window, not a flat
+    file. Unlike Green Taxi/Taxi Zones' `SELECT *` (which tolerates any
+    column being absent, since it never names one), this source's checks
+    need to reference specific fields -- but naming a field that is
+    entirely absent from the JSON (not merely null: genuinely missing, so
+    DuckDB's schema auto-detection never creates it) raises a Binder Error
+    that would otherwise surface as an opaque "unreadable input" instead of
+    a diagnosable required_columns failure.
+
+    So this view stays a plain `SELECT *`: whatever top-level keys exist,
+    including `hourly` as one nested struct column if present. Checking for
+    latitude/longitude/elevation/hourly by name, and only then reaching
+    into hourly's own fields, is run_weather_checks' job, not this
+    function's -- that's what lets a genuinely missing field show up as a
+    named, evidenced BLOCKED check instead of a crash.
+    """
+    input_list = sql_list(inputs)
+
+    connection.execute(
+        f"""
+        CREATE OR REPLACE TEMP VIEW {VIEW_NAMES['weather']} AS
+        SELECT *
+        FROM read_json(
+            {input_list},
+            union_by_name = true
+        )
+        """
+    )
+
+
 # Keyed by --source. Each entry pairs the loader with the view it created,
 # so main() does not need a chain of if/elif to pick the right reader.
 SOURCE_LOADERS = {
     "green_taxi": create_green_taxi_view,
     "taxi_zones": create_taxi_zones_view,
+    "weather": create_weather_view,
 }
 
 
@@ -853,11 +896,443 @@ def run_taxi_zones_checks(connection, contract):
     return results
 
 
+def run_weather_checks(connection, contract):
+    """Weather has no fixed reporting_window or row_count_floor in the
+    contract, unlike Green Taxi and Taxi Zones -- it is a request-window
+    source (#125), and a landed response can legitimately cover any span.
+    So "is this response complete" is answered from the data itself:
+    hourly_series_has_no_gaps compares the observed row count against the
+    hour-span implied by the response's own min/max timestamp, rather than
+    against a number hardcoded for one specific homework window. A gap, a
+    truncated response, or a duplicated hour are all visible as a mismatch
+    there without needing to know what was originally requested.
+    """
+    view = VIEW_NAMES["weather"]
+    hourly_view = WEATHER_HOURLY_VIEW
+    results = []
+
+    total_responses = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        """,
+    )
+
+    columns = get_columns(connection, view)
+
+    required_columns = contract["required_columns"]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in columns
+    ]
+
+    # 1. Source readable
+    results.append(
+        create_result(
+            check_name="source_readable",
+            check_type="AVAILABILITY",
+            severity="BLOCK",
+            fail_count=0,
+            total_count=1,
+            threshold_pct=0.0,
+            details=(
+                "DuckDB successfully opened the configured "
+                "weather source file(s) as JSON."
+            ),
+        )
+    )
+
+    # 2. At least one response landed.
+    results.append(
+        create_result(
+            check_name="row_count_not_empty",
+            check_type="VOLUME",
+            severity="BLOCK",
+            fail_count=1 if total_responses == 0 else 0,
+            total_count=1,
+            threshold_pct=0.0,
+            details=f"Observed responses: {total_responses}.",
+        )
+    )
+
+    # 3. Required top-level fields present -- latitude, longitude,
+    # elevation, and hourly as a whole. Checked against a plain `SELECT *`
+    # (create_weather_view), which never errors on an absent key, so a
+    # response missing one of these shows up here rather than as a crash.
+    results.append(
+        create_result(
+            check_name="required_columns",
+            check_type="SCHEMA",
+            severity="BLOCK",
+            fail_count=len(missing_columns),
+            total_count=len(required_columns),
+            threshold_pct=0.0,
+            details=(
+                "All required top-level fields are present."
+                if not missing_columns
+                else f"Missing top-level fields: {missing_columns}."
+            ),
+        )
+    )
+
+    # Stop safely if later checks cannot reference required fields.
+    if missing_columns or total_responses == 0:
+        return results
+
+    # 4. hourly's own fields (time, temperature_2m, precipitation,
+    # weather_code) present. hourly existing as a column (check 3) does not
+    # guarantee its own sub-fields do -- a response with an empty or
+    # partial hourly object passes check 3 but would raise a Binder Error
+    # the moment a missing sub-field is dot-accessed, same class of problem
+    # as a missing top-level field. Attempting the flatten+unnest inside
+    # try/except turns that crash into a named, evidenced check instead.
+    required_hourly_fields = contract["required_hourly_fields"]
+
+    try:
+        connection.execute(
+            f"""
+            CREATE OR REPLACE TEMP VIEW {hourly_view} AS
+            SELECT
+                UNNEST(hourly.time::VARCHAR[]) AS time,
+                UNNEST(hourly.temperature_2m)  AS temperature_2m,
+                UNNEST(hourly.precipitation)   AS precipitation,
+                UNNEST(hourly.weather_code)    AS weather_code
+            FROM {view}
+            """
+        )
+        hourly_fields_missing = []
+    except duckdb.Error as error:
+        hourly_fields_missing = [
+            field
+            for field in required_hourly_fields
+            if field not in str(error)
+        ] or required_hourly_fields
+        results.append(
+            create_result(
+                check_name="required_hourly_fields",
+                check_type="SCHEMA",
+                severity="BLOCK",
+                fail_count=len(required_hourly_fields),
+                total_count=len(required_hourly_fields),
+                threshold_pct=0.0,
+                details=(
+                    "hourly is missing one or more required fields "
+                    f"{required_hourly_fields}: {error}"
+                ),
+            )
+        )
+        return results
+
+    results.append(
+        create_result(
+            check_name="required_hourly_fields",
+            check_type="SCHEMA",
+            severity="BLOCK",
+            fail_count=0,
+            total_count=len(required_hourly_fields),
+            threshold_pct=0.0,
+            details="hourly.time, .temperature_2m, .precipitation, and .weather_code are all present.",
+        )
+    )
+
+    total_hours = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        """,
+    )
+
+    # 5. The hourly series itself is not empty. A response can have a
+    # present-but-empty hourly block (all four arrays length 0) instead of
+    # the 4xx error profiled for an invalid window (docs/source_profile.md)
+    # -- this catches that shape distinctly from a response missing hourly
+    # entirely (already caught by required_columns above).
+    results.append(
+        create_result(
+            check_name="hourly_series_not_empty",
+            check_type="VOLUME",
+            severity="BLOCK",
+            fail_count=1 if total_hours == 0 else 0,
+            total_count=1,
+            threshold_pct=0.0,
+            details=f"Observed hourly rows: {total_hours}.",
+        )
+    )
+
+    if total_hours == 0:
+        return results
+
+    # 6. hourly.time not null. Every other row-level check and the
+    # gap/duplicate checks below key off time, so a null here has to be
+    # caught before anything downstream trusts it.
+    time_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE time IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="hourly_time_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=time_nulls,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="hourly.time is required for every hour.",
+        )
+    )
+
+    if time_nulls:
+        return results
+
+    # 7. temperature_2m not null
+    temperature_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE temperature_2m IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="temperature_2m_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=temperature_nulls,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="hourly.temperature_2m is required for every hour.",
+        )
+    )
+
+    # 8. precipitation not null
+    precipitation_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE precipitation IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="precipitation_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=precipitation_nulls,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="hourly.precipitation is required for every hour.",
+        )
+    )
+
+    # 9. weather_code not null
+    weather_code_nulls = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE weather_code IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="weather_code_not_null",
+            check_type="NOT_NULL",
+            severity="BLOCK",
+            fail_count=weather_code_nulls,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="hourly.weather_code is required for every hour.",
+        )
+    )
+
+    # 10. No duplicate hourly timestamps. Directly targets the acceptance
+    # criteria "replaying the same window produces no duplicates" at the
+    # file-integrity level: this validator has no run history of its own
+    # (it is stateless, like Green Taxi's and Taxi Zones' gates), so what
+    # it can prove is that one landed response does not itself contain the
+    # same hour twice -- cross-run duplicate suppression is Bronze's job,
+    # via the business key documented in docs/ingestion.md.
+    duplicate_hours = scalar(
+        connection,
+        f"""
+        SELECT COALESCE(
+            SUM(duplicate_count - 1),
+            0
+        )
+        FROM (
+            SELECT
+                time,
+                COUNT(*) AS duplicate_count
+            FROM {hourly_view}
+            GROUP BY time
+            HAVING COUNT(*) > 1
+        )
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="no_duplicate_hourly_timestamps",
+            check_type="DUPLICATE",
+            severity="BLOCK",
+            fail_count=duplicate_hours,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="Every hourly.time value must appear at most once per response.",
+        )
+    )
+
+    # 11. Hourly series has no gaps. Compares the observed row count to the
+    # hour-span implied by the response's own min/max time (TRY_CAST
+    # guards a malformed, non-parseable timestamp from raising instead of
+    # failing this check cleanly). A truncated response, a skipped hour, or
+    # duplicated hours inflating the count all show up as a mismatch here.
+    gap_check = connection.execute(
+        f"""
+        SELECT
+            COUNT(*) AS observed_hours,
+            DATE_DIFF(
+                'hour',
+                MIN(TRY_CAST(time AS TIMESTAMP)),
+                MAX(TRY_CAST(time AS TIMESTAMP))
+            ) + 1 AS expected_hours
+        FROM {hourly_view}
+        WHERE TRY_CAST(time AS TIMESTAMP) IS NOT NULL
+        """
+    ).fetchone()
+
+    observed_hours, expected_hours = gap_check
+    coverage_gap = (
+        0
+        if observed_hours == expected_hours
+        else 1
+    )
+
+    results.append(
+        create_result(
+            check_name="hourly_series_has_no_gaps",
+            check_type="COMPLETENESS",
+            severity="BLOCK",
+            fail_count=coverage_gap,
+            total_count=1,
+            threshold_pct=0.0,
+            details=(
+                f"Observed {observed_hours} hourly rows; the response's own "
+                f"min/max timestamp span implies {expected_hours}."
+            ),
+        )
+    )
+
+    # 12. Temperature is within a physically plausible range. Mirrors the
+    # anomaly query used to profile this source (docs/source_profile.md):
+    # precipitation < 0 OR temperature_2m < -50 OR temperature_2m > 60.
+    temperature_out_of_range = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE TRY_CAST(temperature_2m AS DOUBLE) < -50
+           OR TRY_CAST(temperature_2m AS DOUBLE) > 60
+           OR TRY_CAST(temperature_2m AS DOUBLE) IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="temperature_plausible_range",
+            check_type="RANGE",
+            severity="BLOCK",
+            fail_count=temperature_out_of_range,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="temperature_2m must parse as a number between -50 and 60 (Celsius).",
+        )
+    )
+
+    # 13. Precipitation is non-negative
+    precipitation_negative = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE TRY_CAST(precipitation AS DOUBLE) < 0
+           OR TRY_CAST(precipitation AS DOUBLE) IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="precipitation_non_negative",
+            check_type="RANGE",
+            severity="BLOCK",
+            fail_count=precipitation_negative,
+            total_count=total_hours,
+            threshold_pct=0.0,
+            details="precipitation must parse as a number and cannot be negative.",
+        )
+    )
+
+    # 14. weather_code domain. WARN, not BLOCK -- unlike the checks above,
+    # an unrecognized WMO code is not proof the response is malformed, only
+    # that this window observed a code the profiling pass (12 of the WMO
+    # table's ~28 codes) did not. Same threshold convention as Green Taxi's
+    # vendor_id_domain/payment_type_domain (0.1%): a handful of unfamiliar
+    # codes is tolerated, but nearly-all-unfamiliar suggests a truly
+    # different payload, not a quiet gap in the profiling pass.
+    known_weather_codes = (
+        0, 1, 2, 3, 45, 48,
+        51, 53, 55, 56, 57,
+        61, 63, 65, 66, 67,
+        71, 73, 75, 77,
+        80, 81, 82, 85, 86,
+        95, 96, 99,
+    )
+
+    invalid_weather_code = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {hourly_view}
+        WHERE TRY_CAST(weather_code AS INTEGER) NOT IN {known_weather_codes}
+           OR TRY_CAST(weather_code AS INTEGER) IS NULL
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="weather_code_known_domain",
+            check_type="DOMAIN",
+            severity="WARN",
+            fail_count=invalid_weather_code,
+            total_count=total_hours,
+            threshold_pct=0.1,
+            details="weather_code should be one of the WMO codes Open-Meteo documents.",
+        )
+    )
+
+    return results
+
+
 # Keyed by --source. Both functions share the exact same signature and
 # result shape, so main() can dispatch without a chain of if/elif.
 CHECK_RUNNERS = {
     "green_taxi": run_green_taxi_checks,
     "taxi_zones": run_taxi_zones_checks,
+    "weather": run_weather_checks,
 }
 
 
@@ -912,7 +1387,7 @@ def write_evidence(
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
-            "Validate a Green Taxi or Taxi Zones source locally "
+            "Validate a Green Taxi, Taxi Zones, or Weather source locally "
             "with DuckDB before Bronze ingestion."
         )
     )
@@ -930,7 +1405,8 @@ def parse_arguments():
         required=True,
         help=(
             "One or more local paths or glob patterns for the chosen "
-            "--source (parquet for green_taxi, csv for taxi_zones)."
+            "--source (parquet for green_taxi, csv for taxi_zones, "
+            "json for weather)."
         ),
     )
 

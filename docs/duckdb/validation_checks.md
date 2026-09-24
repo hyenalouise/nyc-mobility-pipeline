@@ -41,8 +41,42 @@ depends on: LocationID being a clean, unique join key.
    non-null and still unique
 8. borough_not_null
 
+## Weather (14 checks)
+
+Weather is a request-window source landed as one JSON response, not a flat
+file, so its contract has no `row_count_floor` or fixed `reporting_window`
+the way Green Taxi's does -- a landed response can cover any span. Its
+checks fall into two tiers: whether the response has the right shape at
+all, and whether the hourly series inside it is internally consistent.
+
+1. source_readable
+2. row_count_not_empty -- at least one response object landed
+3. required_columns -- top-level `latitude`, `longitude`, `elevation`,
+   `hourly` all present, checked by name against a plain `SELECT *` so a
+   genuinely absent field is reported here rather than crashing the gate
+4. required_hourly_fields -- `hourly`'s own `time`, `temperature_2m`,
+   `precipitation`, `weather_code` all present; a distinct failure mode
+   from #3, since `hourly` existing does not guarantee its own fields do
+5. hourly_series_not_empty -- `hourly` present but with empty arrays is a
+   different malformation than `hourly` missing entirely (#3)
+6. hourly_time_not_null
+7. temperature_2m_not_null
+8. precipitation_not_null
+9. weather_code_not_null
+10. no_duplicate_hourly_timestamps -- every `hourly.time` value at most
+    once per response
+11. hourly_series_has_no_gaps -- observed row count vs. the hour-span
+    implied by the response's own min/max `hourly.time`; this and #10 are
+    deliberately separate checks, since a duplicate that exactly replaces
+    a missing hour leaves the count-vs-span arithmetic looking correct
+12. temperature_plausible_range -- -50 to 60°C
+13. precipitation_non_negative
+14. weather_code_known_domain (WARN, 0.1% threshold) -- against the WMO
+    code table Open-Meteo documents; an unfamiliar code alone is not proof
+    of a malformed response, unlike #1-13
+
 The source gate validates local inputs supplied through the `--input`
-parameter, for either source, selected with `--source green_taxi` or
-`--source taxi_zones` (default: `green_taxi`). The validation suite does
-not download source files and does not require network connectivity or
-credentials for either source.
+parameter, for any of the three sources, selected with `--source
+green_taxi`, `--source taxi_zones`, or `--source weather` (default:
+`green_taxi`). The validation suite does not download source files and
+does not require network connectivity or credentials for any source.
