@@ -49,6 +49,15 @@ targets:
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
 
 resources:
+  dashboards:
+    data_quality_dashboard:
+      display_name: NYC Mobility Data Quality Dashboard
+      file_path: dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+    analytics_dashboard:
+      display_name: NYC Mobility Analytics Dashboard
+      file_path: dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
   jobs:
     NYC_Mobility_Pipeline:
       name: NYC Mobility Pipeline
@@ -302,14 +311,14 @@ resources:
           dashboard_task:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
-            dashboard_id: 01f1b2d854811eb6ae9d063a806e7612
+            dashboard_id: ${resources.dashboards.data_quality_dashboard.id}
         - task_key: nyc_mobility_analytics
           depends_on:
             - task_key: 90_validate_analytics
           dashboard_task:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
-            dashboard_id: 01f1b2d7cd3819ab9f69f54022737848
+            dashboard_id: ${resources.dashboards.analytics_dashboard.id}
       # Every gate reads :code_revision and stamps it on the rows it writes, so
       # a data-quality result can be traced to the code that produced it.
       #

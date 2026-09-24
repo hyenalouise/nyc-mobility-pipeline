@@ -52,7 +52,27 @@ Dependencies are what enforce the gates: if a validation task fails, everything 
 | `analytics_zones` | SQL file | `etl/06_analytics/30_mobility_patterns_by_zone.sql` | `gate_gold` |
 | `gate_analytics` | SQL file | `etl/06_analytics/90_validate_analytics.sql` | the three analytics tasks |
 
-Dashboards read validated Analytics results and are not job tasks.
+## Dashboards
+
+Dashboards are job tasks like everything above, added after the tasks that
+produce the data they read. Both are bundle-owned resources
+(`resources.dashboards` in `databricks.yml`) rather than hardcoded dashboard
+ids: each entry points at a `.lvdash.json` file under `dashboards/`, and the
+job's `dashboard_task` entries reference the resource by id. A deploy into a
+workspace that has never held these dashboards creates them there, instead
+of failing on an id that only exists in the workspace they were originally
+built in (#122).
+
+| Task key | Dashboard | Source file | Depends on |
+|---|---|---|---|
+| `dq_dashboard` | NYC Mobility Data Quality Dashboard | `dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json` | every validation gate task |
+| `nyc_mobility_analytics` | NYC Mobility Analytics Dashboard | `dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json` | `gate_analytics` |
+
+`dq_dashboard` runs regardless of whether upstream tasks passed or failed
+(`run_if: ALL_DONE`), so a failing pipeline still gets a refreshed data
+quality view showing what failed. `nyc_mobility_analytics` only runs after
+the analytics gate passes, since it presents validated business answers and
+has nothing meaningful to show otherwise.
 
 ## What makes a gate real
 

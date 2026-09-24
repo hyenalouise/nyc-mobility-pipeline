@@ -1,12 +1,18 @@
 # Dashboards
 
-This folder contains dashboard deliverables for the NYC Mobility Pipeline project.
+This folder contains the dashboard definitions for the NYC Mobility Pipeline
+project. Each `.lvdash.json` file is the deployable source of truth:
+`databricks.yml` declares it as a bundle-owned resource
+(`resources.dashboards`), and the job's dashboard tasks reference that
+resource rather than a hardcoded dashboard id, so a deploy into a workspace
+that has never held these dashboards creates them there (#122).
 
 ## Available Dashboards
 
-### 1. Pipeline Data Quality Dashboard
+### 1. NYC Mobility Data Quality Dashboard
 
 Related Issue: #44
+Definition file: `11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json`
 
 Purpose:
 - Monitor pipeline health
@@ -26,6 +32,7 @@ Key Features:
 ### 2. NYC Mobility Analytics Dashboard
 
 Related Issue: #43
+Definition file: `11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json`
 
 Purpose:
 - Present validated answers to approved business questions
@@ -40,17 +47,15 @@ Key Features:
 
 ---
 
-## Dashboard Evidence
-
-Add screenshots, links, exports, or supporting evidence files for dashboard deliverables in this folder.
-
-Suggested structure:
+## Dashboard Evidence and Folder Structure
 
 dashboards/
 ├── README.md
-├── data_quality_dashboard/
-│   ├── screenshots/
-│   └── export_files/
-└── analytics_dashboard/
-    ├── screenshots/
-    └── export_files/
+├── 11_data_quality_dashboard/
+│   └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
+└── 11_analytics_dashboard/
+    └── 10_NYC_mobility_analytics_dashboard.lvdash.json
+
+Each `.lvdash.json` is exported directly from the workspace; it is not
+edited by hand. Screenshots or other supporting evidence, if needed, go
+alongside the definition file in the same folder.
