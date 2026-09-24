@@ -34,10 +34,19 @@ targets:
 
   # Deploys under the real job name with no prefix. Only after a dev deploy
   # has been verified.
+  #
+  # root_path is required in production mode, and is one fixed folder rather
+  # than one per person on purpose: the bundle's deployment state lives there,
+  # so a per-user path would let a second person's prod deploy create a
+  # duplicate job instead of updating the one that exists. Validate warns that
+  # /Workspace/Shared is writable by every workspace user; that is accepted
+  # here so any of us can redeploy, and is the thing to narrow if this ever
+  # outlives the course.
   prod:
     mode: production
     workspace:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
 
 resources:
   jobs:
@@ -335,3 +344,19 @@ resources:
       queue:
         enabled: true
       performance_target: PERFORMANCE_OPTIMIZED
+
+      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so a
+      # daily run would find nothing new on almost every day; weekly bounds how
+      # long a newly landed file waits to one week, and gives freshness
+      # monitoring an interval to measure against.
+      #
+      # Quartz syntax, not crontab: seconds first, and `?` in the day-of-month
+      # position because day-of-week is set. "0 6 * * 1" would not mean this.
+      #
+      # No pause_status here, deliberately. Left unset, the target decides:
+      # dev (development mode) deploys it PAUSED so nobody's sandbox fires on
+      # a timer, and prod deploys it UNPAUSED. Setting it on the job would
+      # override that for every target.
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON"
+        timezone_id: America/New_York
