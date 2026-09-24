@@ -10,7 +10,7 @@ This is the controlled run #148 asked for and #151 merged without.
 
 ## How the bad delivery was staged
 
-The job never read a bad file from the landing folder. #158 made each gate's input a job parameter (`green_taxi_input`, `taxi_zones_input`) whose default is the landing path its loader reads. For this test only the Green Taxi gate was pointed at a separate test folder. The loaders always read the landing folder, so the test files could not be loaded even if the gate had passed.
+The job never read a bad file from the landing folder. #158 made each gate's input a job parameter (`green_taxi_input`, `taxi_zones_input`) whose default is the landing path its loader reads. For this test only the Green Taxi gate was pointed at a separate test folder. The loaders always read the landing folder, so the test files could not be loaded. If the gate had passed, though, its loader would have loaded the landing folder, which this run did not check. Review found that gap, and it is now closed: see "An override run can no longer load" below.
 
 Test folder: `/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/`
 
@@ -83,7 +83,7 @@ The job sets no retries, but the failed gate ran a second time about a minute la
 
 <img width="1517" height="1001" alt="image" src="https://github.com/user-attachments/assets/ae80ad9d-1ffa-44cb-99cf-d1a4c5e8399e" />
 
-So retrying identical bad input fails identically, which is correct. It also costs a minute and a second set of FAIL rows for a verdict that can't change, so gate tasks should probably not be retried (follow-up below).
+So retrying identical bad input fails identically, which is correct. **This retry is the evidence for #158's "the repair fails the same way" step**, not the repair below: it is the one attempt that re-ran on the same bad input. It also costs a minute and a second set of FAIL rows for a verdict that can't change, so gate tasks should probably not be retried (follow-up below).
 
 ## Every gate attempt in the source layer
 
@@ -133,9 +133,28 @@ The first blocked run, `196037847989948`, gave the right verdicts within a minut
 
 It was not caused by the override: the Taxi Zones gate hung the same way on its default input, and the same code wrote its rows in about a minute in the runs before and after. It did not happen again in this session. The job has no timeout, so nothing would have stopped it on its own.
 
+## Against the #158 test plan
+
+| Expected in #158 | Result | Evidence |
+|---|---|---|
+| The gate FAILS with `trip_distance_non_negative` in layer `source` | ✅ | The blocked run, both attempts |
+| The loader and everything after it are skipped; Zones and Weather load | ✅ | 20 skipped, 11 succeeded |
+| Bronze stays 133,367, no new `ingestion_batches` row, Silver and Gold unchanged | ✅ | "Before and after" |
+| Retrying the same bad input fails the same way | ✅ | The **automatic retry** (attempt 2), same check and same 5 rows |
+| A repair with nothing changed fails the same way | ❌ as planned, ✅ in substance | The CLI repair dropped the override and checked the landing files. That is **operational evidence about repairs**, not proof of this step; the automatic retry covers it |
+| A rerun with the defaults succeeds with no duplicates | ✅ | 32/32, same counts |
+
+## An override run can no longer load
+
+Bri's review of #159 pointed out what this run did not test: an override points only the gate at the test folder, and the loader still reads the landing folder. Had the test input **passed**, the loader would have loaded landing files this run never checked. The docs warned against that, but nothing stopped it.
+
+#159 now stops it. Each gate is also given the exact path its loader reads (`--load-input`). When its `--input` differs, the gate still runs and records every check, then fails its task with exit 4 (`EXIT_TEST_INPUT`) even if the verdict is ACCEPTED. The loader and everything after it are skipped, as in this blocked run. Normal and scheduled runs, where the two paths are the same, are unchanged.
+
+Tests cover both sides: a test input that passes exits 4 and is still recorded, a blocked one keeps exit 1, the real input still exits 0, and the job test fails if any gate's `--load-input` or default input is not exactly its loader's path.
+
 ## Follow-ups
 
-- **Retries on the gate tasks.** Set `max_retries: 0` on the two source-gate tasks, so a BLOCK verdict is recorded once. Separate issue.
+- **Retries on the gate tasks.** Set `max_retries: 0` on the source-gate tasks, so a BLOCK verdict is recorded once. Separate issue.
 - **A timeout on the gate tasks.** A few minutes would have failed the hung run instead of leaving it running. Separate issue.
 - **Repair and overrides.** Noted in `docs/job_setup.md`: to repeat a test, start a new run with the override.
 - **The shell quoting** for `--params` is fixed in `966adec`. Unquoted, zsh expands the `*` and stops with `no matches found` before the job starts, which is what happened on the first try.
@@ -145,7 +164,8 @@ It was not caused by the override: the Taxi Zones gate hung the same way on its 
 - A bad delivery is refused by the deployed job before Bronze, and the refusal is recorded in `data_quality_results` under layer `source`.
 - The refused source's loader and everything after it are skipped, while the other sources still load and pass their gates.
 - Nothing from the refused delivery reached any table, and nothing was duplicated by the repair or the rerun.
-- The gate reads the input the job gives it, and the default is what the loader reads.
+- The gate reads the input the job gives it. In a normal run that input is exactly what the loader reads, which the tests pin.
+- In this run, an override checked something other than what the loader reads, which was safe only because the gate blocked. Since #159, a gate on an override input can't let its loader run at all.
 
 ## What it does not prove
 
