@@ -1,0 +1,1046 @@
+{
+  "datasets": [
+    {
+      "name": "739300ac",
+      "displayName": "pipeline_runs",
+      "config": {
+        "version": "1.1",
+        "source": "`ftw-week-08`.`01-control`.pipeline_runs",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "e98752b4",
+      "displayName": "latest_run_status",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT status, started_at, completed_at\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nORDER BY started_at DESC\r\nLIMIT 1",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "9d0cc217",
+      "displayName": "recent_runs",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    run_id,\r\n    triggered_by,\r\n    started_at,\r\n    completed_at,\r\n    status\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nORDER BY started_at DESC\r\nLIMIT 20",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ce85ddca",
+      "displayName": "latest_run_duration",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    run_id,\r\n    started_at,\r\n    completed_at,\r\n    (unix_timestamp(completed_at) - unix_timestamp(started_at)) AS duration_seconds\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nWHERE completed_at IS NOT NULL\r\nORDER BY started_at DESC\r\nLIMIT 1",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ef0b2b58",
+      "displayName": "run_duration_trend",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    ROW_NUMBER() OVER (ORDER BY started_at ASC) AS run_seq,\r\n    run_id,\r\n    started_at,\r\n    (unix_timestamp(completed_at) - unix_timestamp(started_at)) AS duration_seconds\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nWHERE completed_at IS NOT NULL\r\nORDER BY started_at ASC\r\nLIMIT 50",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "760ddc0b",
+      "displayName": "latest_run_failures",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT check_name, status, fail_count, total_count, details\r\nFROM `ftw-week-08`.`01-control`.data_quality_results\r\nWHERE layer = 'control'\r\n  AND run_id = (\r\n      SELECT run_id FROM `ftw-week-08`.`01-control`.pipeline_runs\r\n      ORDER BY started_at DESC LIMIT 1\r\n  )\r\n  AND status IN ('FAIL', 'WARN')\r\nORDER BY status DESC, check_name",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "177094da",
+      "displayName": "latest_run_fail_count",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT COUNT_IF(status = 'FAIL') AS fail_count\r\nFROM `ftw-week-08`.`01-control`.data_quality_results\r\nWHERE layer = 'control'\r\n  AND run_id = (\r\n      SELECT run_id FROM `ftw-week-08`.`01-control`.pipeline_runs\r\n      ORDER BY started_at DESC LIMIT 1\r\n  )",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a18e3c00",
+      "displayName": "run_recency",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    started_at,\r\n    completed_at,\r\n    (unix_timestamp(current_timestamp()) - unix_timestamp(started_at)) / 3600.0 AS hours_since_last_run\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nORDER BY started_at DESC\r\nLIMIT 1",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "d1329b24",
+      "displayName": "status_success_rate",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT ROUND(100.0 * COUNT_IF(status = 'SUCCESS') / COUNT(*), 1) AS success_rate_pct\r\nFROM (\r\n    SELECT status FROM `ftw-week-08`.`01-control`.pipeline_runs\r\n    ORDER BY started_at DESC LIMIT 20\r\n)",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "538eac25",
+      "displayName": "avg_duration_20",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT ROUND(AVG(duration_seconds), 1) AS avg_duration_seconds\r\nFROM (\r\n    SELECT (unix_timestamp(completed_at) - unix_timestamp(started_at)) AS duration_seconds\r\n    FROM `ftw-week-08`.`01-control`.pipeline_runs\r\n    WHERE completed_at IS NOT NULL\r\n    ORDER BY started_at DESC LIMIT 20\r\n)",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "14a46ba4",
+      "displayName": "runs_per_day",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    DATE(started_at) AS run_date,\r\n    COUNT(*) AS run_count\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nGROUP BY DATE(started_at)\r\nORDER BY run_date",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "7a3c2243",
+      "displayName": "avg_duration_per_day",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT\r\n    DATE(started_at) AS run_date,\r\n    ROUND(AVG(unix_timestamp(completed_at) - unix_timestamp(started_at)), 1) AS avg_duration_seconds\r\nFROM `ftw-week-08`.`01-control`.pipeline_runs\r\nWHERE completed_at IS NOT NULL\r\nGROUP BY DATE(started_at)\r\nORDER BY run_date",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    },
+    {
+      "name": "056a4a7d",
+      "displayName": "latest_run_stuck_count",
+      "config": {
+        "version": "1.1",
+        "source": "SELECT fail_count AS stuck_runs_detected\r\nFROM `ftw-week-08`.`01-control`.data_quality_results\r\nWHERE dataset = 'pipeline_runs'\r\n  AND check_name = 'no_stuck_runs'\r\nORDER BY executed_at DESC\r\nLIMIT 1",
+        "dimensions": [
+          {
+            "expr": "source.*"
+          }
+        ],
+        "measures": [
+          {
+            "name": "count",
+            "expr": "COUNT(*)",
+            "comment": "Represents the total number of rows in the dataset. Use this measure to count all",
+            "displayName": "Count"
+          }
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "name": "d828aa07",
+      "displayName": "Untitled page",
+      "layout": [
+        {
+          "widget": {
+            "name": "latest-control-gate-status",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "e98752b4",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\">Latest Control Gate Status</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "status"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "recent-control-gate-runs",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "9d0cc217",
+                  "fields": [
+                    {
+                      "name": "run_id",
+                      "expression": "`run_id`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "triggered_by",
+                      "expression": "`triggered_by`"
+                    },
+                    {
+                      "name": "completed_at",
+                      "expression": "`completed_at`"
+                    },
+                    {
+                      "name": "started_at",
+                      "expression": "`started_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\"><span style=\"font-size: 24px;\">Recent Control Gate Runs</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "run_id"
+                  },
+                  {
+                    "fieldName": "status"
+                  },
+                  {
+                    "fieldName": "triggered_by"
+                  },
+                  {
+                    "fieldName": "completed_at"
+                  },
+                  {
+                    "fieldName": "started_at"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "latest-control-gate-duration-sec",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ce85ddca",
+                  "fields": [
+                    {
+                      "name": "sum(duration_seconds)",
+                      "expression": "SUM(`duration_seconds`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\">Latest Control Gate Duration (sec)</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(duration_seconds)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "control-gate-duration-trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ef0b2b58",
+                  "fields": [
+                    {
+                      "name": "run_seq",
+                      "expression": "`run_seq`"
+                    },
+                    {
+                      "name": "duration_seconds",
+                      "expression": "`duration_seconds`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\"><span style=\"font-size: 24px;\">Control Gate Duration Trend</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "run_seq",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "duration_seconds",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 7,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "failed-checks-latest-run",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "177094da",
+                  "fields": [
+                    {
+                      "name": "sum(fail_count)",
+                      "expression": "SUM(`fail_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\">Latest Run Failed Checks</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(fail_count)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "latest-run-failed-warned-checks",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "760ddc0b",
+                  "fields": [
+                    {
+                      "name": "fail_count",
+                      "expression": "`fail_count`"
+                    },
+                    {
+                      "name": "total_count",
+                      "expression": "`total_count`"
+                    },
+                    {
+                      "name": "check_name",
+                      "expression": "`check_name`"
+                    },
+                    {
+                      "name": "details",
+                      "expression": "`details`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\"><span style=\"font-size:24px\">Latest Run - Failed / Warned Checks</span></span>",
+                  "fields": []
+                },
+                "description": {
+                  "value": "<span style=\"text-align:center;display:block;\">If \"No Data\" - all clear!</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "fail_count"
+                  },
+                  {
+                    "fieldName": "total_count"
+                  },
+                  {
+                    "fieldName": "check_name"
+                  },
+                  {
+                    "fieldName": "details"
+                  },
+                  {
+                    "fieldName": "status"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 15,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "hours-since-last-control-gate-run",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a18e3c00",
+                  "fields": [
+                    {
+                      "name": "hours_since_last_run",
+                      "expression": "`hours_since_last_run`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\">Hours Since Last Control Gate Run</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "hours_since_last_run"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "f029aa20",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a18e3c00",
+                  "fields": [
+                    {
+                      "name": "completed_at",
+                      "expression": "`completed_at`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\">Date of Last Control Gate Run</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "completed_at"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "db2fc148",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# <span style=\"text-align:center;display:block\"><span style=\"color: #00A972;\">STATUS</span></span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "369d4778",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# <span style=\"text-align:center;display:block\"><span style=\"color: #FFAB00;\">DURATION</span></span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "9aae87d2",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# <span style=\"text-align:center;display:block\"><span style=\"color: #077A9D;\">RECENCY</span></span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "54a7deb8",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# <span style=\"text-align:center;display:block\"><span style=\"color:#FF3621\">FAILS</span></span>"
+              ]
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "success-rate-last-20-runs",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "d1329b24",
+                  "fields": [
+                    {
+                      "name": "sum(success_rate_pct)",
+                      "expression": "SUM(`success_rate_pct`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\">Success Rate % (Last 20 Runs)</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(success_rate_pct)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "average-duration-last-20-runs",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "538eac25",
+                  "fields": [
+                    {
+                      "name": "avg_duration_seconds",
+                      "expression": "`avg_duration_seconds`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\">Average Duration (Last 20 Runs)</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_duration_seconds"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 3,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "control-gate-run-activity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "14a46ba4",
+                  "fields": [
+                    {
+                      "name": "run_date",
+                      "expression": "`run_date`"
+                    },
+                    {
+                      "name": "sum(run_count)",
+                      "expression": "SUM(`run_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\"><span style=\"font-size: 24px;\">Control Gate Run Activity</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "run_date",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(run_count)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "average-control-gate-duration-by-day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "7a3c2243",
+                  "fields": [
+                    {
+                      "name": "daily(run_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `run_date`)"
+                    },
+                    {
+                      "name": "avg_duration_seconds",
+                      "expression": "`avg_duration_seconds`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block;\"><span style=\"font-size: 24px;\">Average Control Gate Duration by Day</span></span>",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(run_date)",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg_duration_seconds",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 10,
+            "width": 5,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "f51dfe86",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "056a4a7d",
+                  "fields": [
+                    {
+                      "name": "stuck_runs_detected",
+                      "expression": "`stuck_runs_detected`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "<span style=\"text-align:center;display:block\">Stuck Runs Detected</span>",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "stuck_runs_detected"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 3,
+            "width": 3,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

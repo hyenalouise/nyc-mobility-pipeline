@@ -976,7 +976,7 @@ surfaces that condition the same way `no_stuck_batches` already does for
 **Rejected alternatives:**
 
 - **Adding a `previous_attempt_run_id` column to `pipeline_runs`** to
-  support a RETRIES signal. Attempted and reverted. Populating it required
+  support a RETRIES signal. Attempted and reverted, including on the live table (see Operational note below). Populating it required
   either a manual `UPDATE` after every retry or a job-level parameter a
   person must remember to supply — both depend on a human step with nothing
   to catch a missed or wrong value, so the column would sit at `NULL`
@@ -1004,6 +1004,30 @@ surfaces that condition the same way `no_stuck_batches` already does for
   link a retry to its failed attempt exists.
 - STATUS, DURATION, FAILURES, and RECENCY require no further schema work;
   all four are already answerable from `pipeline_runs`'s existing columns.
+
+**Operational note (2026-09-24):**
+
+The live `pipeline_runs` table still carried `previous_attempt_run_id` from
+the reverted attempt described above — the column's own `ALTER TABLE ADD
+COLUMNS` had already run against the shared table before that attempt was
+rolled back in code, so removing the code did not remove the column. This
+surfaced as `DELTA_INSERT_COLUMN_ARITY_MISMATCH` on the Control gate's insert
+into `pipeline_runs`, which expects the 6 columns this decision assumes.
+
+Databricks SQL's `DROP COLUMN` requires column mapping (`delta.columnMapping.mode
+= 'name'`), which is not enabled by default and cannot later be reverted to
+`none`. Column mapping was enabled and the leftover column was dropped:
+
+    ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
+    SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
+
+    ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
+    DROP COLUMN previous_attempt_run_id;
+
+This is a permanent property of the table going forward. It does not change
+query behavior or require any reader/writer on current Databricks compute to
+change anything, but it is a one-way change worth knowing about if the
+table's properties are inspected later.
 
 **Files:**
 
