@@ -366,6 +366,32 @@ def test_the_gate_input_rule_would_catch_a_test_folder_inside_the_landing_folder
     assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
 
 
+def gates_not_told_what_their_loader_reads(job_definition):
+    """Gated sources whose gate can't tell a test input from the real one,
+    because its --load-input is missing or isn't its loader's path."""
+    wrong = []
+    for source, task in gate_tasks(job_definition).items():
+        parameters = task["spark_python_task"]["parameters"]
+        if "--load-input" not in parameters or argument(task, "--load-input") != loader_reads(LOADERS[source]):
+            wrong.append(source)
+    return wrong
+
+
+def test_each_gate_knows_exactly_what_its_loader_reads():
+    """An override run must never load (#159). The gate stops its task when
+    its input differs from --load-input, which only works if --load-input is
+    exactly what the loader reads."""
+    assert gates_not_told_what_their_loader_reads(job()) == []
+
+
+def test_the_load_input_rule_would_catch_a_gate_without_it():
+    broken = copy.deepcopy(job())
+    parameters = gate_tasks(broken)["taxi_zones"]["spark_python_task"]["parameters"]
+    index = parameters.index("--load-input")
+    del parameters[index:index + 2]
+    assert gates_not_told_what_their_loader_reads(broken) == ["taxi_zones"]
+
+
 def test_the_gate_rule_would_catch_its_regression():
     broken = copy.deepcopy(job())
     task_running(broken, LOADERS["green_taxi"])["depends_on"] = [{"task_key": "00_create_control_tables"}]
