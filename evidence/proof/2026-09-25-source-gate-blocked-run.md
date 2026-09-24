@@ -164,19 +164,29 @@ Deployed commit `294f24818052bb6fc7d6dcd18193538a0e3a2621` to the same `dev` job
 | `10_load_green_taxi` and the 19 tasks after it | UPSTREAM_FAILED, never started |
 | Zones and Weather: gates, loads, Bronze and Silver gates, cleans; plus control setup and `dq_dashboard` | 12 succeeded |
 
-**[Screenshot: Run A timeline, with the green_taxi_input override in Job parameters]**
+**Run A timeline, with the green_taxi_input override in Job parameters**
+<img width="1422" height="1142" alt="image" src="https://github.com/user-attachments/assets/7fd5c364-a04e-4f1f-80c1-f5cc552a57e4" />
 
-**[Screenshot: Run A, 05_source_gate_green_taxi, Original attempt: Test input line, exit 4, --input and --load-input]**
 
-**[Screenshot: Run A, 05_source_gate_green_taxi, Retry 1st: same result]**
+**Run A, 05_source_gate_green_taxi, Original attempt: Test input line, exit 4, --input and --load-input**
+<img width="1428" height="1139" alt="image" src="https://github.com/user-attachments/assets/ac692b93-c9d0-4bfe-9f23-60eddea94b22" />
+
+
+**Run A, 05_source_gate_green_taxi, Retry 1st: same result**
+<img width="1411" height="1136" alt="image" src="https://github.com/user-attachments/assets/9faabeb5-f63b-48e7-8cee-113484fba801" />
+
 
 This is the case the first run could not show: the checks passed, and the loader still did not run.
 
 **Run B, `1034205573179763`: a normal run, no overrides.** 33 of 33 tasks succeeded. All three gates were ACCEPTED with exit 0 and no test-input line. It is also the first live run of the weather gate from #152: 15 checks, all PASS.
 
-**[Screenshot: Run B timeline, all green, default job parameters]**
+**Run B timeline, all green, default job parameters**
+<img width="1436" height="1141" alt="image" src="https://github.com/user-attachments/assets/9ffd21e6-81e7-413b-a010-a1e1d04a8c11" />
 
-**[Screenshot: Run B, 05_source_gate_weather output]**
+
+**Run B, 05_source_gate_weather output**
+<img width="1446" height="1133" alt="image" src="https://github.com/user-attachments/assets/01a341d8-25a3-48f7-8ed2-55ad995aa937" />
+
 
 **Counts**, same query as "Before and after":
 
@@ -187,10 +197,9 @@ This is the case the first run could not show: the checks passed, and the loader
 | `dq_source_rows` | 361 | 458 |
 
 Silver `green_taxi_clean` and Gold `fact_taxi_trip` stayed 133,353. The 97 new source rows are one set per gate attempt on this commit, all with 0 FAILs: Run A recorded 15 + 17 + 8 + 17 (the retry), Run B 15 + 8 + 17.
+<img width="820" height="815" alt="image" src="https://github.com/user-attachments/assets/41a366be-e02f-4214-9849-451a402abc08" />
+<img width="834" height="468" alt="image" src="https://github.com/user-attachments/assets/697b91a1-bd9a-4761-a864-432919e34298" />
 
-**[Screenshot: before and after counts]**
-
-**[Screenshot: gate attempts on 294f248]**
 
 ### Two attempts that hung first
 
