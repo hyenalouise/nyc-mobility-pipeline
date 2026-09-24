@@ -71,7 +71,7 @@ built in (#122).
 | Task key | Dashboard | Source file | Depends on |
 |---|---|---|---|
 | `dq_dashboard` | NYC Mobility Data Quality Dashboard | `dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json` | every validation gate task |
-| `nyc_mobility_analytics` | NYC Mobility Analytics Dashboard | `dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json` | `gate_analytics` |
+| `nyc_mobility_analytics` | NYC Mobility Analytics Dashboard | `dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json` | `90_validate_analytics` |
 
 `dq_dashboard` runs regardless of whether upstream tasks passed or failed
 (`run_if: ALL_DONE`), so a failing pipeline still gets a refreshed data
