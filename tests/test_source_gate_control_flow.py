@@ -119,3 +119,18 @@ def test_a_blocking_failure_still_reaches_a_blocked_verdict(gate_run):
     assert evidence["gate_result"] == "BLOCKED"
     failing = [r["check_name"] for r in evidence["results"] if r["status"] == "FAIL"]
     assert "trip_distance_non_negative" in failing
+
+
+def test_a_negative_fare_is_reported_not_blocking(gate_run):
+    # One row out of one is a 100% failure rate, so a threshold of any size
+    # coming back would turn this into a FAIL (D28).
+    row = list(CLEAN_ROW)
+    fare_index = [name for name, _ in COLUMNS].index("fare_amount")
+    row[fare_index] = -14.5
+
+    exit_code, evidence = gate_run(row)
+
+    assert exit_code == source_gate.EXIT_ACCEPTED
+    assert evidence["gate_result"] == "ACCEPTED"
+    fare = next(r for r in evidence["results"] if r["check_name"] == "fare_amount_non_negative")
+    assert (fare["severity"], fare["status"], fare["fail_count"]) == ("INFO", "INFO", 1)

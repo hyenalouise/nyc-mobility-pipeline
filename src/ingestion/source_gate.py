@@ -339,7 +339,10 @@ def run_green_taxi_checks(connection, contract):
         )
     )
 
-    # 7b. Fare amount nonnegative
+    # 7b. Fare amount nonnegative -- INFO, never blocking (D28). Negative fares
+    # are a known source trait that Silver retains and flags (D15), and the
+    # Bronze SQL gate reports the same count as INFO. A threshold here would
+    # refuse a delivery the rest of the pipeline accepts.
     negative_fare_amount = scalar(
         connection,
         f"""
@@ -353,13 +356,13 @@ def run_green_taxi_checks(connection, contract):
         create_result(
             check_name="fare_amount_non_negative",
             check_type="RANGE",
-            severity="WARN",
+            severity="INFO",
             fail_count=negative_fare_amount,
             total_count=total_rows,
-            threshold_pct=0.1,
+            threshold_pct=None,
             details=(
-                "Negative fare amounts are flagged. "
-                "A maximum failure rate of 0.1% is tolerated."
+                "Negative fares are a known source trait: retained "
+                "and flagged in Silver (D15). Counted, never blocking."
             ),
         )
     )
