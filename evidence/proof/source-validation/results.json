@@ -5,7 +5,7 @@
     "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/green_tripdata_2026-04.parquet",
     "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/green_tripdata_2026-05.parquet"
   ],
-  "check_count": 16,
+  "check_count": 17,
   "gate_result": "ACCEPTED",
   "exit_code": 0,
   "results": [
@@ -98,15 +98,26 @@
       "details": "Negative fares are a known source trait: retained and flagged in Silver (D15). Counted, never blocking."
     },
     {
-      "check_name": "dropoff_after_pickup",
+      "check_name": "dropoff_before_pickup",
       "check_type": "CONSISTENCY",
       "severity": "WARN",
       "status": "WARN",
-      "fail_count": 100,
+      "fail_count": 1,
       "total_count": 133367,
-      "fail_pct": 0.075,
+      "fail_pct": 0.0007,
       "threshold_pct": 0.1,
-      "details": "Drop-off should occur after pickup. A maximum failure rate of 0.1% is tolerated."
+      "details": "Drop-off should not be before pickup. A maximum failure rate of 0.1% is tolerated."
+    },
+    {
+      "check_name": "zero_length_trip",
+      "check_type": "CONSISTENCY",
+      "severity": "INFO",
+      "status": "INFO",
+      "fail_count": 99,
+      "total_count": 133367,
+      "fail_pct": 0.0742,
+      "threshold_pct": null,
+      "details": "Drop-off at the same instant as pickup: a known source trait, retained and flagged in Silver (D15). Counted, never blocking."
     },
     {
       "check_name": "expected_month_coverage",

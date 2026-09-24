@@ -14,5 +14,7 @@ Expected output for the March–May 2026 files:
 
 - Gate result: ACCEPTED
 - Exit code: 0
-- Checks executed: 16
+- Checks executed: 17
 - `fare_amount_non_negative`: INFO, 384 rows (D28)
+- `dropoff_before_pickup`: WARN, 1 row (D29)
+- `zero_length_trip`: INFO, 99 rows (D29)
