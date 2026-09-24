@@ -29,8 +29,9 @@ Task keys and dependencies are the ones in `databricks.yml`, which is what the D
 | `90_validate_control` | SQL file | `etl/01_control/90_validate_control.sql` | `10_load_green_taxi`, `20_load_open_meteo`, `30_load_taxi_zones` |
 | `05_source_gate_green_taxi` | Python file, serverless | `src/ingestion/source_gate.py --source green_taxi` | `00_create_control_tables` |
 | `05_source_gate_taxi_zones` | Python file, serverless | `src/ingestion/source_gate.py --source taxi_zones` | `00_create_control_tables` |
+| `05_source_gate_weather` | Python file, serverless | `src/ingestion/source_gate.py --source weather` | `00_create_control_tables` |
 | `10_load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `05_source_gate_green_taxi` |
-| `20_load_open_meteo` | SQL file | `etl/02_bronze/20_load_open_meteo.sql` | `00_create_control_tables` |
+| `20_load_open_meteo` | SQL file | `etl/02_bronze/20_load_open_meteo.sql` | `05_source_gate_weather` |
 | `30_load_taxi_zones` | SQL file | `etl/02_bronze/30_load_taxi_zones.sql` | `05_source_gate_taxi_zones` |
 | `90_validate_green_taxi` | SQL file | `etl/02_bronze/90_validate_green_taxi.sql` | `10_load_green_taxi` |
 | `90_validate_open_meteo` | SQL file | `etl/02_bronze/90_validate_open_meteo_weather.sql` | `20_load_open_meteo` |
