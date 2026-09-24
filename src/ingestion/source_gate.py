@@ -422,8 +422,11 @@ def run_green_taxi_checks(connection, contract):
         )
     )
 
-    # 8. Drop-off after pickup
-    invalid_trip_order = scalar(
+    # 8. Drop-off before pickup (D29). The same condition as Silver's
+    # dropoff_before_pickup_flag. Zero-length trips are counted separately
+    # below: they were 99 of the 100 rows this check used to count, which
+    # left a month a few rows from blocking on trips Silver keeps.
+    reversed_trips = scalar(
         connection,
         f"""
         SELECT COUNT(*)
@@ -431,21 +434,52 @@ def run_green_taxi_checks(connection, contract):
         WHERE lpep_pickup_datetime IS NOT NULL
           AND lpep_dropoff_datetime IS NOT NULL
           AND lpep_dropoff_datetime
-              <= lpep_pickup_datetime
+              < lpep_pickup_datetime
         """,
     )
 
     results.append(
         create_result(
-            check_name="dropoff_after_pickup",
+            check_name="dropoff_before_pickup",
             check_type="CONSISTENCY",
             severity="WARN",
-            fail_count=invalid_trip_order,
+            fail_count=reversed_trips,
             total_count=total_rows,
             threshold_pct=0.1,
             details=(
-                "Drop-off should occur after pickup. "
+                "Drop-off should not be before pickup. "
                 "A maximum failure rate of 0.1% is tolerated."
+            ),
+        )
+    )
+
+    # 8b. Zero-length trips (D29). Drop-off at the same instant as pickup.
+    # Silver keeps them and flags them with implausible_duration_flag (D15),
+    # so they are counted, never blocking.
+    zero_length_trips = scalar(
+        connection,
+        f"""
+        SELECT COUNT(*)
+        FROM {view}
+        WHERE lpep_pickup_datetime IS NOT NULL
+          AND lpep_dropoff_datetime IS NOT NULL
+          AND lpep_dropoff_datetime
+              = lpep_pickup_datetime
+        """,
+    )
+
+    results.append(
+        create_result(
+            check_name="zero_length_trip",
+            check_type="CONSISTENCY",
+            severity="INFO",
+            fail_count=zero_length_trips,
+            total_count=total_rows,
+            threshold_pct=None,
+            details=(
+                "Drop-off at the same instant as pickup: a known source "
+                "trait, retained and flagged in Silver (D15). Counted, "
+                "never blocking."
             ),
         )
     )
