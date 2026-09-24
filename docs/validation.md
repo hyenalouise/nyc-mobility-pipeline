@@ -50,7 +50,7 @@ Rules for good data are source-specific. How results are recorded and judged is 
 
 - **Gate result:** a source's gate passes when its latest run for that layer has no `FAIL` rows. `WARN` rows need a written explanation. `INFO` rows are measurements only.
 - **Thresholds** are documented tolerances, not values tuned to today's data.
-- **Known source traits** that appear on every run (for example the 18,754 Green Taxi rows with nulls in six columns) are `INFO` measurements with a tolerance, not permanent warnings.
+- **Known source traits** that appear on every run (for example the 18,754 Green Taxi rows with nulls in six columns) are `INFO` measurements, not permanent warnings. An `INFO` check has no threshold: `threshold_pct` is `NULL`, and `dq_status()` returns `INFO` without reading it, so it is counted and never blocks. Tolerances belong to `WARN` checks.
 - **Empty inputs:** every check defines what happens when its input has zero rows; an empty dataset never passes silently.
 - **Lineage:** each result row records `batch_id` or `source_version_id` and `code_revision`, so it can be traced to the data and code it checked. The exception is layer `source`: the gate runs before a batch exists, so its rows record the input paths in `evidence_location` instead.
 - **Reconciliation** (row counts and at least one measure against the source) is a `FAIL`-severity check inside the gate, not a separate query outside it.
