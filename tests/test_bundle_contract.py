@@ -309,6 +309,47 @@ def test_the_dq_dashboard_waits_for_the_source_gates():
     assert not missing, f"the DQ dashboard can refresh before {sorted(missing)} has recorded its verdict."
 
 
+def loader_reads(loader_path):
+    """The path a Bronze loader passes to read_files."""
+    text = (REPO_ROOT / loader_path).read_text(encoding="utf-8")
+    return re.search(r"read_files\(\s*'([^']+)'", text).group(1)
+
+
+def misplaced_gate_inputs(job_definition, parameters):
+    """Gated sources whose gate would, by default, check something other than
+    what their loader loads."""
+    defaults = {p["name"]: p["default"] for p in parameters}
+    misplaced = []
+    for source, task in gate_tasks(job_definition).items():
+        name = argument(task, "--input").removeprefix("{{job.parameters.").removesuffix("}}")
+        if not defaults.get(name, "").startswith(loader_reads(LOADERS[source])):
+            misplaced.append(source)
+    return misplaced
+
+
+def test_each_gate_reads_its_own_input_parameter():
+    """Overriding one gate's input for a controlled test (#158) must leave
+    the other gate reading its landing folder."""
+    for source, task in gate_tasks(job()).items():
+        assert argument(task, "--input") == f"{{{{job.parameters.{source}_input}}}}", (
+            f"the {source} gate does not read the job parameter {source}_input."
+        )
+
+
+def test_each_gate_input_defaults_to_what_its_loader_reads():
+    """A normal or scheduled run must check exactly what gets loaded. A test
+    folder committed as the default would check one thing and load another."""
+    assert misplaced_gate_inputs(job(), job()["parameters"]) == []
+
+
+def test_the_gate_input_rule_would_catch_a_test_folder_default():
+    parameters = copy.deepcopy(job()["parameters"])
+    next(p for p in parameters if p["name"] == "green_taxi_input")["default"] = (
+        "/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet"
+    )
+    assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
+
+
 def test_the_gate_rule_would_catch_its_regression():
     broken = copy.deepcopy(job())
     task_running(broken, LOADERS["green_taxi"])["depends_on"] = [{"task_key": "00_create_control_tables"}]
