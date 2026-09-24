@@ -85,7 +85,7 @@ resources:
               - --source
               - green_taxi
               - --input
-              - /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+              - "{{job.parameters.green_taxi_input}}"
               - --evidence
               - /tmp/source_gate_green_taxi.json
               - --record-control
@@ -102,7 +102,7 @@ resources:
               - --source
               - taxi_zones
               - --input
-              - /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+              - "{{job.parameters.taxi_zones_input}}"
               - --evidence
               - /tmp/source_gate_taxi_zones.json
               - --record-control
@@ -386,6 +386,20 @@ resources:
       parameters:
         - name: code_revision
           default: ${bundle.git.commit}
+
+        # What each source gate reads (#158). The defaults are the landing
+        # paths the Bronze loaders read, so a normal or scheduled run checks
+        # exactly what gets loaded. Override one to make a gate refuse a test
+        # delivery staged outside the landing folder:
+        #   databricks bundle run NYC_Mobility_Pipeline \
+        #     --params green_taxi_input=/Volumes/.../_test/green_taxi_blocked/*.parquet
+        # The loaders always read the landing folder, so test data is never
+        # loaded. A run with an override is therefore a test, not a load: if
+        # the gate passed, its loader would load files this run didn't check.
+        - name: green_taxi_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+        - name: taxi_zones_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
 
       # Pinned to a commit, not a branch, and deliberately.
       #

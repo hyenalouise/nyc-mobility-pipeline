@@ -239,6 +239,15 @@ def argument(task, flag):
     return parameters[parameters.index(flag) + 1]
 
 
+def resolved(value):
+    """A task argument as a normal run sees it: a {{job.parameters.X}}
+    reference becomes X's default."""
+    match = re.fullmatch(r"\{\{job\.parameters\.(\w+)\}\}", value)
+    if not match:
+        return value
+    return next(p["default"] for p in job()["parameters"] if p["name"] == match.group(1))
+
+
 def ungated_loaders(job_definition):
     """Gated sources whose Bronze loader does not wait for that source's gate."""
     gates = gate_tasks(job_definition)
@@ -267,7 +276,7 @@ def test_every_bronze_loader_waits_for_its_source_gate():
 def test_the_gates_read_the_volume_and_record_the_deployed_revision():
     control_setup = task_running(job(), "etl/01_control/00_create_control_tables.sql")["task_key"]
     for source, task in gate_tasks(job()).items():
-        assert argument(task, "--input").startswith("/Volumes/"), (
+        assert resolved(argument(task, "--input")).startswith("/Volumes/"), (
             f"the {source} gate does not read the Volume, so it checks different files "
             "than the Bronze loader loads."
         )
