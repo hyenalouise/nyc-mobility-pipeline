@@ -23,6 +23,6 @@ that file; keep this table in sync with them.
 | Code | Constant | Meaning |
 |---|---|---|
 | 0 | `EXIT_ACCEPTED` | No blocking check failed. |
-| 1 | `EXIT_BLOCKED` | At least one blocking check failed (`MISSING_CONTRACT`, `MISSING_INPUT`, or `NETWORK_INPUT_NOT_ALLOWED`). |
-| 2 | `EXIT_INVALID_CONFIGURATION` | The gate never ran a check — no contract declared for `green_taxi`, no `--input` supplied, or an `--input` pointed at a network location instead of a local file. |
+| 1 | `EXIT_BLOCKED` | At least one check has status FAIL: a BLOCK check with any failing row, or a WARN check above its threshold. INFO checks never cause it. |
+| 2 | `EXIT_INVALID_CONFIGURATION` | The gate never ran a check — `MISSING_CONTRACT` (no contract declared for the `--source`), `MISSING_INPUT` (no `--input` supplied), or `NETWORK_INPUT_NOT_ALLOWED` (an `--input` pointed at a network location instead of a local file). |
 | 3 | `EXIT_INPUT_UNAVAILABLE` | The declared input could not be read (missing file, unreadable file, or a glob that matched nothing).
