@@ -152,10 +152,61 @@ Bri's review of #159 pointed out what this run did not test: an override points 
 
 Tests cover both sides: a test input that passes exits 4 and is still recorded, a blocked one keeps exit 1, the real input still exits 0, and the job test fails if any gate's `--load-input` or default input is not exactly its loader's path.
 
+### Live check of the fix
+
+Deployed commit `294f24818052bb6fc7d6dcd18193538a0e3a2621` to the same `dev` job (33 tasks now, with the weather gate from #152) and ran it twice.
+
+**Run A, `1087187638708963`: a test input that passes.** `green_taxi_input` was overridden with one real landing file, `green_tripdata_2026-03.parquet`, while the loader reads the whole folder. Nothing was staged or uploaded.
+
+| Task | Result |
+|---|---|
+| `05_source_gate_green_taxi` | ACCEPTED, then `Test input: this run checked [...green_tripdata_2026-03.parquet], but the loader reads .../green_taxi/*.parquet. Nothing will be loaded.`, exit 4, 17 rows recorded. Retried once by Databricks, same result |
+| `10_load_green_taxi` and the 19 tasks after it | UPSTREAM_FAILED, never started |
+| Zones and Weather: gates, loads, Bronze and Silver gates, cleans; plus control setup and `dq_dashboard` | 12 succeeded |
+
+**[Screenshot: Run A timeline, with the green_taxi_input override in Job parameters]**
+
+**[Screenshot: Run A, 05_source_gate_green_taxi, Original attempt: Test input line, exit 4, --input and --load-input]**
+
+**[Screenshot: Run A, 05_source_gate_green_taxi, Retry 1st: same result]**
+
+This is the case the first run could not show: the checks passed, and the loader still did not run.
+
+**Run B, `1034205573179763`: a normal run, no overrides.** 33 of 33 tasks succeeded. All three gates were ACCEPTED with exit 0 and no test-input line. It is also the first live run of the weather gate from #152: 15 checks, all PASS.
+
+**[Screenshot: Run B timeline, all green, default job parameters]**
+
+**[Screenshot: Run B, 05_source_gate_weather output]**
+
+**Counts**, same query as "Before and after":
+
+| | Before Run A | After Run B |
+|---|---:|---:|
+| `bronze_green_taxi_raw` | 133,367 | 133,367 |
+| `ingestion_batches` | 8 | 8 |
+| `dq_source_rows` | 361 | 458 |
+
+Silver `green_taxi_clean` and Gold `fact_taxi_trip` stayed 133,353. The 97 new source rows are one set per gate attempt on this commit, all with 0 FAILs: Run A recorded 15 + 17 + 8 + 17 (the retry), Run B 15 + 8 + 17.
+
+**[Screenshot: before and after counts]**
+
+**[Screenshot: gate attempts on 294f248]**
+
+### Two attempts that hung first
+
+Runs `768975900287724` (03:53) and `716231120415734` (04:05) printed the same verdicts, including the test-input line and exit 4, but all three gates then hung before recording, like `196037847989948` earlier. Both were cancelled after about 10 minutes; they wrote nothing and loaded nothing.
+
+The task's driver log explains it. The gate's Python ran on serverless compute, but the Spark service it records through never came up:
+
+    BAD_REQUEST: The cluster is in unexpected state Pending, while waiting for the cluster to become available. This is expected for new sessions. Please try again. [state=PENDING]
+
+That line repeats every few seconds until the cancel, the task shows no queries, and the query history is empty. It is a Databricks capacity problem for the Spark part of a serverless Python task, not the gate or its input: Zones and Weather hung the same way on their default inputs. The SQL warehouse, which runs every other task, was unaffected.
+
 ## Follow-ups
 
 - **Retries on the gate tasks.** Set `max_retries: 0` on the source-gate tasks, so a BLOCK verdict is recorded once. Separate issue.
-- **A timeout on the gate tasks.** A few minutes would have failed the hung run instead of leaving it running. Separate issue.
+- **A timeout on the gate tasks.** Three runs hung on the Spark service staying Pending (see "Two attempts that hung first"). A timeout would fail them in minutes instead of leaving them running. Separate issue.
+- **Recording without Spark.** The gate only needs Spark to write its rows. Writing them through the SQL warehouse instead would remove the dependency that hung. Separate issue.
 - **Repair and overrides.** Noted in `docs/job_setup.md`: to repeat a test, start a new run with the override.
 - **The shell quoting** for `--params` is fixed in `966adec`. Unquoted, zsh expands the `*` and stops with `no matches found` before the job starts, which is what happened on the first try.
 
@@ -165,7 +216,7 @@ Tests cover both sides: a test input that passes exits 4 and is still recorded, 
 - The refused source's loader and everything after it are skipped, while the other sources still load and pass their gates.
 - Nothing from the refused delivery reached any table, and nothing was duplicated by the repair or the rerun.
 - The gate reads the input the job gives it. In a normal run that input is exactly what the loader reads, which the tests pin.
-- In this run, an override checked something other than what the loader reads, which was safe only because the gate blocked. Since #159, a gate on an override input can't let its loader run at all.
+- In the first run, an override checked something other than what the loader reads, which was safe only because the gate blocked. Since #159, a gate on an override input can't let its loader run at all: Run A shows a passing test input stopping the loader, and Run B shows normal runs unchanged.
 
 ## What it does not prove
 
