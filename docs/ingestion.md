@@ -158,6 +158,31 @@ Validation:
 - No duplicate LocationID values
 - Source metadata retained
 
+Pre-Bronze source validation:
+
+Before Bronze ingestion runs, `src/ingestion/source_gate.py --source taxi_zones`
+validates the raw CSV locally with DuckDB — no Databricks credentials, no
+network access. This mirrors the Green Taxi gate introduced in #115, extended
+to a second source per #124.
+
+Checks performed: source readable, row count not empty, row count floor (265,
+the full expected snapshot size), required columns present, `LocationID` not
+null, `LocationID` unique, `Borough` not null.
+
+A clean file is `ACCEPTED` (exit code 0); a file failing any check is `BLOCKED`
+(exit code 1) and Bronze must not proceed. Evidence for both cases is recorded
+under `evidence/proof/source-validation/`.
+
+Both a clean snapshot and each defect case (duplicate `LocationID`, blank
+`Borough`, and a non-numeric or out-of-range `LocationID`) are exercised in
+`tests/test_taxi_zones_gate.py`, which generates its own test data rather
+than relying on a committed source file.
+
+See `docs/duckdb/validation_checks.md` for the full check catalogue. The
+severity model and command line are shared across sources; the individual
+checks are not, since each source's business rules differ -- see that file
+for each source's specific list.
+
 ## Failures and recovery
 
 Mark a layer complete only after its load and validation both succeed — a technically-successful write is not enough on its own.
