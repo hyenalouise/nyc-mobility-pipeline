@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-24
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -48,6 +48,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
+| D26 | Add a `no_stuck_runs` check to the Control gate, detecting abandoned pipeline runs | Approved | A run left STARTED past `stuck_after_hours` now fails the gate instead of going unnoticed |
 
 
 ## Foundational decisions
@@ -941,3 +942,69 @@ different code and nothing says which.
 - The recorded revision is the **deployed** commit, not the latest commit on the
   branch. Picking up new code requires a deploy, which is the point of a
   controlled deployment rather than a limitation of it.
+
+
+
+## Monitoring decisions
+
+### D26: `no_stuck_runs` check for pipeline_runs
+
+**Status:** Approved
+**Decision date:** 2026-09-24
+
+**Decision:**
+
+`90_validate_control.sql` gains an eighth check, `no_stuck_runs`, mirroring
+check 4 (`no_stuck_batches`): a run still `STARTED` past `stuck_after_hours`
+is flagged as abandoned rather than in progress. It reads only the existing
+`pipeline_runs` columns (`status`, `started_at`); no schema change is
+required.
+
+Of the classroom monitoring framework's five execution signals (STATUS,
+DURATION, FAILURES, RECENCY, RETRIES), STATUS, DURATION, FAILURES, and
+RECENCY are all directly answerable from `pipeline_runs`'s existing columns.
+RETRIES — linking a run to the failed attempt it replaces — would need a
+schema change and is explicitly deferred; see Rejected alternatives.
+
+**Reason:**
+
+A run that crashes or hangs mid-execution leaves a row permanently in
+`STARTED`, which explains nothing and blocks nothing on its own. This check
+surfaces that condition the same way `no_stuck_batches` already does for
+`ingestion_batches`.
+
+**Rejected alternatives:**
+
+- **Adding a `previous_attempt_run_id` column to `pipeline_runs`** to
+  support a RETRIES signal. Attempted and reverted. Populating it required
+  either a manual `UPDATE` after every retry or a job-level parameter a
+  person must remember to supply — both depend on a human step with nothing
+  to catch a missed or wrong value, so the column would sit at `NULL`
+  indefinitely with no proof it was ever used correctly. It also introduced
+  real migration risk: Databricks SQL's `ALTER TABLE ... ADD COLUMN` does
+  not support an `IF NOT EXISTS` modifier (confirmed via
+  `PARSE_SYNTAX_ERROR`), and the idempotent workaround added meaningful
+  complexity for a column with no functioning consumer. Deferred until
+  there is a way to populate it automatically, without a human step.
+- **Whole-pipeline execution tracking**, writing `pipeline_runs` rows from
+  every `90_validate_*` gate rather than Control alone. Out of scope for
+  this pass; `pipeline_runs` remains written to only by
+  `90_validate_control.sql`. The last gate in the chain (Gold) could stand
+  in as a proxy for "did the whole pipeline run" if this is revisited, or
+  Databricks' own native job-run history could be used instead of
+  expanding `pipeline_runs`.
+
+**Consequences:**
+
+- `no_stuck_runs` participates in the same blocking logic as
+  `no_stuck_batches` (`WARN` severity, `threshold_pct = 0.0`), so a stuck
+  run fails the gate, not just warns.
+- RETRIES remains an open signal for the Execution layer; a future
+  decision should revisit it once an automatic, non-human-dependent way to
+  link a retry to its failed attempt exists.
+- STATUS, DURATION, FAILURES, and RECENCY require no further schema work;
+  all four are already answerable from `pipeline_runs`'s existing columns.
+
+**Files:**
+
+- `etl/01_control/90_validate_control.sql`
