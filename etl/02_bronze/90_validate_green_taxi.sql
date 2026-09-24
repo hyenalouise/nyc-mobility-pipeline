@@ -279,7 +279,7 @@ checks AS (
     -- ---- known source traits: measured every run, never blocking ----
 
     UNION ALL
-    SELECT 'zero_length_trip', 'MEASURE', 'INFO', NULL,
+    SELECT 'zero_length_trip', 'CONSISTENCY', 'INFO', NULL,
            SUM(CASE WHEN lpep_pickup_datetime IS NOT NULL
                       AND lpep_dropoff_datetime IS NOT NULL
                       AND lpep_dropoff_datetime = lpep_pickup_datetime

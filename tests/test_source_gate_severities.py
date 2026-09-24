@@ -30,13 +30,13 @@ from ingestion import source_gate  # noqa: E402
 
 BRONZE_GATE = REPO_ROOT / "etl" / "02_bronze" / "90_validate_green_taxi.sql"
 
-# check_name -> (severity, threshold_pct), as decided in D28 and D29.
+# check_name -> (check_type, severity, threshold_pct), as decided in D28 and D29.
 DECIDED = {
-    "trip_distance_non_negative": ("BLOCK", 0.0),
-    "fare_amount_non_negative": ("INFO", None),
-    "dropoff_before_pickup": ("WARN", 0.1),
-    "zero_length_trip": ("INFO", None),
-    "passenger_count_gt_8": ("WARN", 0.1),
+    "trip_distance_non_negative": ("RANGE", "BLOCK", 0.0),
+    "fare_amount_non_negative": ("RANGE", "INFO", None),
+    "dropoff_before_pickup": ("CONSISTENCY", "WARN", 0.1),
+    "zero_length_trip": ("CONSISTENCY", "INFO", None),
+    "passenger_count_gt_8": ("RANGE", "WARN", 0.1),
 }
 
 COLUMNS = [
@@ -100,13 +100,18 @@ def gate_run(tmp_path, monkeypatch):
     return run
 
 
-def test_each_decided_check_has_its_decided_severity(gate_run):
+def test_each_decided_check_has_its_decided_metadata(gate_run):
     exit_code, results = gate_run()
     assert exit_code == source_gate.EXIT_ACCEPTED
-    for name, (severity, threshold) in DECIDED.items():
+    for name, (check_type, severity, threshold) in DECIDED.items():
         assert name in results, f"the gate no longer runs {name}"
-        got = (results[name]["severity"], results[name]["threshold_pct"])
-        assert got == (severity, threshold), f"{name}: expected {(severity, threshold)}, got {got}"
+        got = (
+            results[name]["check_type"],
+            results[name]["severity"],
+            results[name]["threshold_pct"],
+        )
+        expected = (check_type, severity, threshold)
+        assert got == expected, f"{name}: expected {expected}, got {got}"
     assert "dropoff_after_pickup" not in results, "the old at-or-before check is back"
 
 
@@ -142,10 +147,10 @@ def test_the_bronze_gate_makes_the_same_split():
     gate would leave the same risk one step later in the same run."""
     assert bronze_check("dropoff_after_pickup") is None, "the Bronze gate still has the at-or-before check"
     reversed_check = bronze_check("dropoff_before_pickup")
-    assert reversed_check and "'WARN', 0.1" in reversed_check
+    assert reversed_check and "'CONSISTENCY', 'WARN', 0.1" in reversed_check
     assert "lpep_dropoff_datetime < lpep_pickup_datetime" in reversed_check
     zero_check = bronze_check("zero_length_trip")
-    assert zero_check and "'INFO', NULL" in zero_check
+    assert zero_check and "'CONSISTENCY', 'INFO', NULL" in zero_check
     assert "lpep_dropoff_datetime = lpep_pickup_datetime" in zero_check
     distance_check = bronze_check("trip_distance_non_negative")
     assert distance_check and "'FAIL', 0.0" in distance_check
