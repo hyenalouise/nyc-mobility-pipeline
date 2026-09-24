@@ -120,21 +120,25 @@ credentials, no network access. This mirrors the Green Taxi and Taxi Zones
 gates (#115, #124), extended to the third source per #125.
 
 Weather is a request-window source, not a fixed file, so its contract has no
-`row_count_floor` or `reporting_window` the way Green Taxi's does — a landed
-response can legitimately cover any span. Instead, `hourly_series_has_no_gaps`
-derives the expected row count from the response's own minimum and maximum
-`hourly.time` value (`hour span + 1`) and compares it against the observed
-row count, so a truncated response or a missing hour is caught without the
-gate needing to know what window was actually requested.
+`row_count_floor`. Instead it records a `requested_window` (2026-03-01 to
+2026-05-31), pinned by a test to the `weather_requested_*` variables in
+`20_load_open_meteo.sql`. Completeness is checked two ways:
+`hourly_series_has_no_gaps` compares the row count to the span between the
+response's own first and last hour, which catches a hole in the middle, and
+`hourly_series_covers_requested_window` checks the count equals the requested
+days × 24 (the same rule as Bronze's `hourly_volume`) and that the first and
+last hour are the window's start 00:00 and end 23:00, which catches a file cut
+short at either end.
 
 Checks performed: source readable, at least one response landed, required
 top-level fields present (`latitude`, `longitude`, `elevation`, `hourly`),
 `hourly`'s own four fields present (`time`, `temperature_2m`, `precipitation`,
-`weather_code`), hourly series not empty, `hourly.time` not null,
-`temperature_2m`/`precipitation`/`weather_code` not null, no duplicate
-`hourly.time` values, `hourly_series_has_no_gaps`, `temperature_2m` within
--50–60°C, `precipitation` non-negative, and `weather_code` against the full
-WMO code set. The range, non-negative, and WMO checks all block at 0%,
+`weather_code`), hourly series not empty, `hourly.time` present and
+parseable, `temperature_2m`/`precipitation`/`weather_code` not null, no
+duplicate `hourly.time` values, `hourly_series_has_no_gaps`,
+`hourly_series_covers_requested_window`, `temperature_2m` within -50–60°C,
+`precipitation` non-negative, and `weather_code` against the full WMO code
+set. The window, range, non-negative, and WMO checks all block at 0%,
 matching the Bronze and Silver weather gates, which fail on the same
 conditions; tolerating them here would only defer the block to Bronze.
 
@@ -153,11 +157,15 @@ no duplicate hours, not that a rerun against Bronze produces no duplicate
 rows — that guarantee is Bronze's own business key and `MERGE`, documented
 above.
 
-Both a clean response and each defect case (a missing hour, a duplicated
-hour, a null or out-of-range measurement, negative precipitation, an
-unfamiliar `weather_code`, a missing required field, and an empty hourly
-series) are exercised in `tests/test_weather_gate.py`, which generates its
-own JSON fixtures rather than relying on a committed source file.
+Both a clean response and each defect case (a missing hour, a response cut
+short at either end, a duplicated hour, a null or unparseable time, a null or
+out-of-range measurement, negative precipitation, an unknown or non-integer
+`weather_code`, a missing required or hourly field, a non-array hourly field,
+and an empty hourly series) are exercised in `tests/test_weather_gate.py`,
+which generates its own JSON fixtures rather than relying on a committed
+source file. The same file pins the gate's WMO codes and temperature range to
+the Bronze and Silver weather gates, and its `requested_window` to the Bronze
+loader.
 
 See `docs/duckdb/validation_checks.md` for the full check catalogue.
 

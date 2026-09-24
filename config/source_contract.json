@@ -19,7 +19,7 @@
       "end": "2026-05-31"
     }
   },
- "taxi_zones": {
+  "taxi_zones": {
     "required_columns": [
       "LocationID",
       "Borough",
@@ -40,7 +40,10 @@
       "temperature_2m",
       "precipitation",
       "weather_code"
-    ]
+    ],
+    "requested_window": {
+      "start": "2026-03-01",
+      "end": "2026-05-31"
+    }
   }
 }
-

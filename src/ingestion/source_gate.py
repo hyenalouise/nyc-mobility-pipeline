@@ -912,15 +912,17 @@ def run_taxi_zones_checks(connection, contract):
 
 
 def run_weather_checks(connection, contract):
-    """Weather has no fixed reporting_window or row_count_floor in the
-    contract, unlike Green Taxi and Taxi Zones -- it is a request-window
-    source (#125), and a landed response can legitimately cover any span.
-    So "is this response complete" is answered from the data itself:
-    hourly_series_has_no_gaps compares the observed row count against the
-    hour-span implied by the response's own min/max timestamp, rather than
-    against a number hardcoded for one specific homework window. A gap, a
-    truncated response, or a duplicated hour are all visible as a mismatch
-    there without needing to know what was originally requested.
+    """Weather is a request-window source (#125): a response covers the
+    dates it was requested for, and nothing in the file says what those
+    were. So "is this response complete" is checked two ways:
+    hourly_series_has_no_gaps catches a hole inside the response's own
+    first-to-last hour, and hourly_series_covers_requested_window checks
+    the count and the first and last hour against the contract's
+    requested_window, which is pinned to the same dates
+    20_load_open_meteo.sql requests. The second is what catches a file cut
+    short at either end, which the first cannot see, and it matches
+    Bronze's hourly_volume check (days x 24) so a response this gate accepts
+    is not refused by Bronze in the same run.
     """
     view = VIEW_NAMES["weather"]
     hourly_view = WEATHER_HOURLY_VIEW
@@ -999,13 +1001,60 @@ def run_weather_checks(connection, contract):
 
     # 4. hourly's own fields (time, temperature_2m, precipitation,
     # weather_code) present. hourly existing as a column (check 3) does not
-    # guarantee its own sub-fields do -- a response with an empty or
-    # partial hourly object passes check 3 but would raise a Binder Error
-    # the moment a missing sub-field is dot-accessed, same class of problem
-    # as a missing top-level field. Attempting the flatten+unnest inside
-    # try/except turns that crash into a named, evidenced check instead.
+    # guarantee its own sub-fields do, and dot-accessing a missing one
+    # raises a Binder Error. So the keys hourly actually has are read first
+    # (json_keys over every response) and compared by name, which reports
+    # exactly which fields are missing. A key that is present but null
+    # still counts as present here; its nulls are caught by the not-null
+    # checks below.
     required_hourly_fields = contract["required_hourly_fields"]
 
+    try:
+        hourly_keys = {
+            row[0]
+            for row in connection.execute(
+                f"""
+                SELECT DISTINCT UNNEST(json_keys(to_json(hourly)))
+                FROM {view}
+                WHERE hourly IS NOT NULL
+                """
+            ).fetchall()
+        }
+    except duckdb.Error:
+        # hourly is not an object at all (a string, a list), so it has no
+        # keys: every required field is missing.
+        hourly_keys = set()
+
+    missing_hourly_fields = [
+        field
+        for field in required_hourly_fields
+        if field not in hourly_keys
+    ]
+
+    results.append(
+        create_result(
+            check_name="required_hourly_fields",
+            check_type="SCHEMA",
+            severity="BLOCK",
+            fail_count=len(missing_hourly_fields),
+            total_count=len(required_hourly_fields),
+            threshold_pct=0.0,
+            details=(
+                "hourly.time, .temperature_2m, .precipitation, and .weather_code are all present."
+                if not missing_hourly_fields
+                else f"hourly is missing required fields: {missing_hourly_fields}."
+            ),
+        )
+    )
+
+    if missing_hourly_fields:
+        return results
+
+    # 4b. Only reached when every field is present but the four cannot be
+    # flattened into rows, for example a field that is a single value
+    # rather than an array. Reported as its own check so a type problem is
+    # never mistaken for a missing field. Absent from the evidence of a
+    # response that flattens, like every check after an early return.
     try:
         connection.execute(
             f"""
@@ -1018,40 +1067,22 @@ def run_weather_checks(connection, contract):
             FROM {view}
             """
         )
-        hourly_fields_missing = []
     except duckdb.Error as error:
-        hourly_fields_missing = [
-            field
-            for field in required_hourly_fields
-            if field not in str(error)
-        ] or required_hourly_fields
         results.append(
             create_result(
-                check_name="required_hourly_fields",
+                check_name="hourly_fields_are_arrays",
                 check_type="SCHEMA",
                 severity="BLOCK",
-                fail_count=len(required_hourly_fields),
-                total_count=len(required_hourly_fields),
+                fail_count=1,
+                total_count=1,
                 threshold_pct=0.0,
                 details=(
-                    "hourly is missing one or more required fields "
-                    f"{required_hourly_fields}: {error}"
+                    "All required hourly fields are present, but they could "
+                    f"not be read as parallel arrays: {error}"
                 ),
             )
         )
         return results
-
-    results.append(
-        create_result(
-            check_name="required_hourly_fields",
-            check_type="SCHEMA",
-            severity="BLOCK",
-            fail_count=0,
-            total_count=len(required_hourly_fields),
-            threshold_pct=0.0,
-            details="hourly.time, .temperature_2m, .precipitation, and .weather_code are all present.",
-        )
-    )
 
     total_hours = scalar(
         connection,
@@ -1081,31 +1112,34 @@ def run_weather_checks(connection, contract):
     if total_hours == 0:
         return results
 
-    # 6. hourly.time not null. Every other row-level check and the
-    # gap/duplicate checks below key off time, so a null here has to be
-    # caught before anything downstream trusts it.
-    time_nulls = scalar(
+    # 6. hourly.time present and readable. The duplicate, gap and window
+    # checks below all key off time, so a null or unparseable value has to
+    # fail here: otherwise it silently drops out of those checks, and an
+    # unreadable first or last hour shrinks the observed and expected
+    # counts by one each, so they still match.
+    invalid_times = scalar(
         connection,
         f"""
         SELECT COUNT(*)
         FROM {hourly_view}
         WHERE time IS NULL
+           OR TRY_CAST(time AS TIMESTAMP) IS NULL
         """,
     )
 
     results.append(
         create_result(
-            check_name="hourly_time_not_null",
+            check_name="hourly_time_valid",
             check_type="NOT_NULL",
             severity="BLOCK",
-            fail_count=time_nulls,
+            fail_count=invalid_times,
             total_count=total_hours,
             threshold_pct=0.0,
-            details="hourly.time is required for every hour.",
+            details="hourly.time must be present and parse as a timestamp for every hour.",
         )
     )
 
-    if time_nulls:
+    if invalid_times:
         return results
 
     # 7. temperature_2m not null
@@ -1211,22 +1245,21 @@ def run_weather_checks(connection, contract):
         )
     )
 
-    # 11. Hourly series has no gaps. Compares the observed row count to the
-    # hour-span implied by the response's own min/max time (TRY_CAST
-    # guards a malformed, non-parseable timestamp from raising instead of
-    # failing this check cleanly). A truncated response, a skipped hour, or
-    # duplicated hours inflating the count all show up as a mismatch here.
+    # 11. No gaps inside the series. Compares the observed row count to the
+    # hour-span between the response's own first and last hour, so a
+    # skipped hour in the middle, or duplicated hours inflating the count,
+    # show up as a mismatch. It cannot see a response cut short at either
+    # end -- the span shrinks with it -- which is check 12's job.
     gap_check = connection.execute(
         f"""
         SELECT
             COUNT(*) AS observed_hours,
             DATE_DIFF(
                 'hour',
-                MIN(TRY_CAST(time AS TIMESTAMP)),
-                MAX(TRY_CAST(time AS TIMESTAMP))
+                MIN(CAST(time AS TIMESTAMP)),
+                MAX(CAST(time AS TIMESTAMP))
             ) + 1 AS expected_hours
         FROM {hourly_view}
-        WHERE TRY_CAST(time AS TIMESTAMP) IS NOT NULL
         """
     ).fetchone()
 
@@ -1252,7 +1285,69 @@ def run_weather_checks(connection, contract):
         )
     )
 
-    # 12. Temperature is within a physically plausible range. Mirrors the
+    # 12. The series covers the requested window. The same rule as
+    # Bronze's hourly_volume (requested days x 24), plus the first and last
+    # hour, so a response missing its first or last day is refused here
+    # instead of being accepted and then blocked at Bronze. Together with
+    # check 10 (no duplicates), a matching count and matching ends mean
+    # every requested hour is present exactly once.
+    requested_start = contract["requested_window"]["start"]
+    requested_end = contract["requested_window"]["end"]
+
+    window_check = connection.execute(
+        f"""
+        SELECT
+            COUNT(*) AS observed_hours,
+            DATE_DIFF(
+                'day',
+                CAST('{requested_start}' AS DATE),
+                CAST('{requested_end}' AS DATE)
+            ) * 24 + 24 AS requested_hours,
+            MIN(CAST(time AS TIMESTAMP)) AS first_hour,
+            MAX(CAST(time AS TIMESTAMP)) AS last_hour,
+            CAST('{requested_start}' AS TIMESTAMP) AS expected_first,
+            CAST('{requested_end}' AS TIMESTAMP) + INTERVAL 23 HOUR AS expected_last
+        FROM {hourly_view}
+        """
+    ).fetchone()
+
+    (
+        window_observed,
+        requested_hours,
+        first_hour,
+        last_hour,
+        expected_first,
+        expected_last,
+    ) = window_check
+
+    window_mismatch = (
+        0
+        if (
+            window_observed == requested_hours
+            and first_hour == expected_first
+            and last_hour == expected_last
+        )
+        else 1
+    )
+
+    results.append(
+        create_result(
+            check_name="hourly_series_covers_requested_window",
+            check_type="COMPLETENESS",
+            severity="BLOCK",
+            fail_count=window_mismatch,
+            total_count=1,
+            threshold_pct=0.0,
+            details=(
+                f"Requested {requested_start} through {requested_end}: "
+                f"{requested_hours} hours from {expected_first} to "
+                f"{expected_last}. Observed {window_observed} hours from "
+                f"{first_hour} to {last_hour}."
+            ),
+        )
+    )
+
+    # 13. Temperature is within a physically plausible range. Mirrors the
     # anomaly query used to profile this source (docs/source_profile.md):
     # precipitation < 0 OR temperature_2m < -50 OR temperature_2m > 60.
     temperature_out_of_range = scalar(
@@ -1278,7 +1373,7 @@ def run_weather_checks(connection, contract):
         )
     )
 
-    # 13. Precipitation is non-negative
+    # 14. Precipitation is non-negative
     precipitation_negative = scalar(
         connection,
         f"""
@@ -1301,7 +1396,7 @@ def run_weather_checks(connection, contract):
         )
     )
 
-    # 14. weather_code domain. BLOCK at 0%, matching Bronze's
+    # 15. weather_code domain. BLOCK at 0%, matching Bronze's
     # weather_code_domain and Silver's weather_code_valid_wmo, which both
     # FAIL on any code outside this set and end in raise_error. The list is
     # the full WMO code table Open-Meteo documents (the same 28 codes Silver
@@ -1309,6 +1404,9 @@ def run_weather_checks(connection, contract):
     # code outside it is genuinely outside WMO. Tolerating it here would
     # only move the block from this gate to Bronze -- later, after the file
     # has already landed -- which is the failure this gate exists to prevent.
+    # Compared as DOUBLE, not INTEGER: TRY_CAST(1.4 AS INTEGER) rounds to 1,
+    # which would let a non-integer code through. As a DOUBLE, 1.4 matches
+    # nothing in the list, and 1.0 still matches 1.
     known_weather_codes = (
         0, 1, 2, 3, 45, 48,
         51, 53, 55, 56, 57,
@@ -1323,8 +1421,8 @@ def run_weather_checks(connection, contract):
         f"""
         SELECT COUNT(*)
         FROM {hourly_view}
-        WHERE TRY_CAST(weather_code AS INTEGER) NOT IN {known_weather_codes}
-           OR TRY_CAST(weather_code AS INTEGER) IS NULL
+        WHERE TRY_CAST(weather_code AS DOUBLE) NOT IN {known_weather_codes}
+           OR TRY_CAST(weather_code AS DOUBLE) IS NULL
         """,
     )
 
