@@ -62,6 +62,24 @@ def test_exactly_one_target_is_the_default():
     assert len(defaults) == 1, f"expected one default target, found {defaults}"
 
 
+def test_production_targets_deploy_to_one_fixed_folder():
+    """Production mode refuses to deploy without workspace.root_path, and prod
+    shipped without one, so `bundle validate --target prod` failed from #117
+    until #132. The path must also be the same for everyone: deployment state
+    lives there, so a per-user path lets a second deploy create a duplicate
+    prod job instead of updating the existing one."""
+    for name, spec in bundle()["targets"].items():
+        spec = spec or {}
+        if spec.get("mode") != "production":
+            continue
+        root_path = spec.get("workspace", {}).get("root_path")
+        assert root_path, f"production target {name!r} sets no workspace.root_path."
+        assert "current_user" not in root_path, (
+            f"production target {name!r} deploys to a per-user folder ({root_path}), "
+            "so each person who deploys it gets their own copy of the prod job."
+        )
+
+
 def test_the_default_target_is_not_production():
     """An accidental bare `databricks bundle deploy` must not land on prod."""
     targets = bundle()["targets"]

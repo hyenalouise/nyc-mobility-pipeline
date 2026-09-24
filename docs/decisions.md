@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-24
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -982,6 +982,13 @@ stale.
 - With `pause_status: UNPAUSED` set on the job, `dev` also resolves to
   `UNPAUSED`. An explicit value overrides development mode, so every sandbox
   would run on the timer. `tests/test_bundle_contract.py` fails if one is added.
+- Those validate runs also reported an error for `prod` that the resolved
+  values above do not show: production mode requires `workspace.root_path`, and
+  the `prod` target had never set one, so it could not deploy at all. Added on
+  2026-09-24 as one fixed folder under `/Workspace/Shared` (per-user folders
+  would let a second deploy create a duplicate prod job). `prod` now validates
+  with one warning, that the folder is writable by all workspace users, which
+  is accepted so any of us can redeploy.
 
 **Verified on the deployed dev job, 2026-09-23:**
 
@@ -1011,7 +1018,8 @@ it.
 **Consequences:**
 
 - Nothing fires in `dev`. The schedule only produces runs once the bundle is
-  deployed to `prod`, which has not been done yet.
+  deployed to `prod`, which has not been done yet. `prod` now validates, but
+  going live waits on #122, so the first scheduled runs are not all failures.
 - Until #122 is fixed, every run ends `FAILED` on the dashboard tasks. A running
   schedule would report a failure every week, and failure alerting (#131) would
   fire each time.
