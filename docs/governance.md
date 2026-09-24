@@ -16,10 +16,11 @@ Its purpose is to ensure that someone outside the project team can:
 
 This document complements:
 
-- [Naming Conventions](n- [Architecture](architecture.md)
-- job_setup.md
+- [Naming Conventions](naming_conventions.md)
+- [Architecture](architecture.md)
+- [Job Setup](job_setup.md)
 - [Validation](validation.md)
-- [Source Gate](duckdbd
+- [DuckDB-Source Gate](duckdb/source_gate.md)
 - [Decisions](decisions.md)
 
 ---
@@ -71,8 +72,8 @@ Analytics
 | Pipeline | Ina Magno | ina.magno@ftwfoundation.org |
 | Pipeline Change Approval | Ina Magno | ina.magno@ftwfoundation.org |
 | Green Taxi Source | Briana Capul | briana.capul@ftwfoundation.org |
-| Taxi Zones Source | Hazelle Crueva | hazelle.crueva@ftwfoundation.org |
-| Open-Meteo Source | Hazelle Crueva | hazelle.crueva@ftwfoundation.org |
+| Taxi Zones Source | Hazelle Cuevas | hazelle.cuevas@ftwfoundation.org |
+| Open-Meteo Source | Hazelle Cuevas | hazelle.cuevas@ftwfoundation.org |
 | Databricks Platform | Crystal Manas | crystal.manas@ftwfoundation.org |
 | Dashboards & Analytics | Crystal Manas | crystal.manas@ftwfoundation.org |
 | Data Quality Framework | Briana Capul | briana.capul@ftwfoundation.org |
@@ -173,10 +174,10 @@ tracks assignment of named owners to individual data-quality checks.
 
 ## Source Layer
 
-Location:
+Source Volume:
 
 ```text
-`ftw-week-08`.`00-source`
+`ftw-week-08`.`00-source`.`group_a_source`
 ```
 
 Sources:
@@ -227,8 +228,8 @@ Tables:
 | Table | Owner |
 |---------|---------|
 | green_taxi_raw | Briana Capul |
-| taxi_zones_raw | Hazelle Crueva |
-| open_meteo_weather_raw | Hazelle Crueva |
+| taxi_zones_raw | Hazelle Cuevas |
+| open_meteo_weather_raw | Hazelle Cuevas |
 
 Purpose:
 
@@ -252,8 +253,8 @@ Tables:
 |---------|---------|
 | green_taxi_clean | Briana Capul |
 | green_taxi_quarantine | Briana Capul |
-| taxi_zones_clean | Hazelle Crueva |
-| weather_hourly | Hazelle Crueva |
+| taxi_zones_clean | Hazelle Cuevas |
+| weather_hourly | Hazelle Cuevas |
 
 Purpose:
 
@@ -566,43 +567,18 @@ The following decisions directly affect this data product:
 
 # Dependency Map
 
-## Green Taxi
+The Data Lineage section above documents the principal source-to-output dependencies.
 
-```text
-green_taxi_raw
-↓
-green_taxi_clean
-↓
-trip_weather_map
-↓
-fact_taxi_trip
-↓
-activity_by_time_and_zone
-```
+The authoritative task-level execution order is maintained in:
 
-## Taxi Zones
+- `job_setup.md`
+- `databricks.yml`
 
-```text
-taxi_zones_raw
-↓
-taxi_zones_clean
-↓
-trip_zone_map
-↓
-dim_taxi_zone
-```
+The authoritative table transformation logic is maintained in:
 
-## Weather
+- `etl/`
 
-```text
-open_meteo_weather_raw
-↓
-weather_hourly
-↓
-trip_weather_map
-↓
-fact_weather_hourly
-```
+Changes to dependency relationships must update the implementation and this document in the same pull request.
 
 ---
 
@@ -624,11 +600,40 @@ Governance information must not exist only in conversations, pull requests, or i
 
 ---
 
-# Related Documentation
+# Governance Questions Answered
 
-- naming_conventions.md
-- [Architecture](architecture.md)
-- job_setup.md
-- [Validation](validation.md)
-- duckdb/source_gate.md
-- [Decisions](decisions.md)
+This document enables a reviewer, operator, or new contributor to answer:
+
+- What is the NYC Mobility data product?
+- Where are its source files and governed tables?
+- Who owns the pipeline?
+- Who owns each source?
+- Who owns the platform?
+- Who owns data quality?
+- Who owns dashboards and analytics?
+- Who can deploy?
+- Who approves production deployment?
+- What downstream datasets depend on each source?
+- How can a Gold or Analytics result be traced to its source?
+- How often is the pipeline currently run?
+- Which data-quality rules are non-negotiable?
+- Which governance decisions define current behavior?
+
+Any unanswered ownership or access question must be marked explicitly as `To be confirmed` rather than inferred.
+
+---
+Issue: [#120](https://github.com/hyenalouise/nyc-mobility-pipeline)
+Document owner: Ina Magno  
+Governance maintainer: Briana Capul  
+Last reviewed: 2026-09-24  
+
+# Related Issues
+
+| Issue | Governance relevance |
+|---|---|
+| [#115](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/115) | Local pre-ingestion source validation |
+| [#120](https://github.com/hyenalouise/nyc-mobility-pipeline) | Central governance documentation |
+| [#123](https://github.com/hyenalouise/nyc-mobility-pipeline) | Bronze-to-DuckDB reconciliation evidence |
+| [#126](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/126) | Named ownership of individual data-quality checks |
+| [#147](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/147) | Negative-fare source-gate policy alignment |
+| [#148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148) | Source gates executed before Bronze loaders |
