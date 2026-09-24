@@ -621,7 +621,7 @@ data_quality_results
 ```
 ## Open Data-Quality Governance Decisions
 
-[Issue #153](https://github.com/hyenalouise/nyc-mobility-pipeline) reviews whether additional source-gate checks should remain blocking.
+[Issue #153](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/153) reviews whether additional source-gate checks should remain blocking.
 
 At the time of writing:
 
@@ -703,7 +703,7 @@ This document enables a reviewer, operator, or new contributor to answer:
 Any unanswered ownership or access question must be marked explicitly as `To be confirmed` rather than inferred.
 
 ---
-Issue: [#120](https://github.com/hyenalouise/nyc-mobility-pipeline)
+Issue: [#120](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/120)
 Document owner: Ina Magno  
 Governance maintainer: Briana Capul  
 Last reviewed: 2026-09-24  
@@ -713,9 +713,9 @@ Last reviewed: 2026-09-24
 | Issue | Governance relevance |
 |---|---|
 | [#115](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/115) | Local pre-ingestion source validation |
-| [#120](https://github.com/hyenalouise/nyc-mobility-pipeline) | Central governance documentation |
-| [#123](https://github.com/hyenalouise/nyc-mobility-pipeline) | Bronze-to-DuckDB reconciliation evidence |
+| [#120](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/120) | Central governance documentation |
+| [#123](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/123) | Bronze-to-DuckDB reconciliation evidence |
 | [#126](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/126) | Named ownership of individual data-quality checks |
 | [#147](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/147) | Negative-fare source-gate policy alignment |
 | [#148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148) | Source gates executed before Bronze loaders |
-| [#153](https://github.com/hyenalouise/nyc-mobility-pipeline) | Review of source-gate blocking policies |
+| [#153](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/153) | Review of source-gate blocking policies |
