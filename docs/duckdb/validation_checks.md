@@ -71,9 +71,15 @@ all, and whether the hourly series inside it is internally consistent.
     a missing hour leaves the count-vs-span arithmetic looking correct
 12. temperature_plausible_range -- -50 to 60°C
 13. precipitation_non_negative
-14. weather_code_known_domain (WARN, 0.1% threshold) -- against the WMO
-    code table Open-Meteo documents; an unfamiliar code alone is not proof
-    of a malformed response, unlike #1-13
+14. weather_code_known_domain -- against the full WMO code table
+    Open-Meteo documents (the same 28 codes Silver maps to categories)
+
+Checks 12-14 block at 0% with no tolerance, deliberately matching the
+Bronze (`90_validate_open_meteo_weather.sql`) and Silver
+(`90_validate_weather_hourly.sql`) gates, which FAIL on the same three
+conditions and stop the job. Silver's transform keeps these rows, but
+Silver's own gate does not let them through, so a looser pre-Bronze gate
+would only move the block later, to after the file has landed.
 
 The source gate validates local inputs supplied through the `--input`
 parameter, for any of the three sources, selected with `--source

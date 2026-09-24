@@ -135,16 +135,30 @@ def test_negative_precipitation_fails_only_its_own_check(tmp_path, monkeypatch):
     assert failing == ["precipitation_non_negative"]
 
 
-def test_a_mostly_unknown_weather_code_fails_the_domain_check(tmp_path, monkeypatch):
-    # weather_code_known_domain tolerates up to 0.1% unfamiliar codes
-    # (matching Green Taxi's vendor_id_domain/payment_type_domain
-    # convention) before it flips from WARN to FAIL, so a single bad code
-    # out of many rows would not be enough to trip it here.
+def test_a_single_unknown_weather_code_blocks(tmp_path, monkeypatch):
+    # weather_code_known_domain blocks at 0%, matching Bronze's
+    # weather_code_domain and Silver's weather_code_valid_wmo: one non-WMO
+    # code in an otherwise clean response is enough, and nothing else fails.
     response = clean_response(hours=4)
-    response["hourly"]["weather_code"] = [12345, 12345, 12345, 12345]
+    response["hourly"]["weather_code"][1] = 12345
     exit_code, failing = run_gate(tmp_path, monkeypatch, response)
     assert exit_code == source_gate.EXIT_BLOCKED
-    assert "weather_code_known_domain" in failing
+    assert failing == ["weather_code_known_domain"]
+
+
+def test_gate_bounds_match_bronze_and_silver_gates():
+    # The pre-Bronze gate must never be looser than the gates after it,
+    # or a response it accepts gets blocked later anyway. Pin its WMO code
+    # set to the lists in the Bronze and Silver weather gates.
+    import re
+    source = (REPO_ROOT / "src/ingestion/source_gate.py").read_text(encoding="utf-8")
+    gate_codes = set(map(int, re.findall(
+        r"\d+", re.search(r"known_weather_codes = \((.*?)\)", source, re.S).group(1))))
+    for sql in ("etl/02_bronze/90_validate_open_meteo_weather.sql",
+                "etl/03_silver/90_validate_weather_hourly.sql"):
+        text = (REPO_ROOT / sql).read_text(encoding="utf-8")
+        match = re.search(r"weather_code NOT IN \((.*?)\)", text, re.S)
+        assert set(map(int, re.findall(r"\d+", match.group(1)))) == gate_codes, sql
 
 
 def test_a_missing_required_field_is_reported_and_stops_row_level_checks(tmp_path, monkeypatch):

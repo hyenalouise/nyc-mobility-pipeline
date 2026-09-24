@@ -1286,13 +1286,14 @@ def run_weather_checks(connection, contract):
         )
     )
 
-    # 14. weather_code domain. WARN, not BLOCK -- unlike the checks above,
-    # an unrecognized WMO code is not proof the response is malformed, only
-    # that this window observed a code the profiling pass (12 of the WMO
-    # table's ~28 codes) did not. Same threshold convention as Green Taxi's
-    # vendor_id_domain/payment_type_domain (0.1%): a handful of unfamiliar
-    # codes is tolerated, but nearly-all-unfamiliar suggests a truly
-    # different payload, not a quiet gap in the profiling pass.
+    # 14. weather_code domain. BLOCK at 0%, matching Bronze's
+    # weather_code_domain and Silver's weather_code_valid_wmo, which both
+    # FAIL on any code outside this set and end in raise_error. The list is
+    # the full WMO code table Open-Meteo documents (the same 28 codes Silver
+    # maps to categories), not only the codes seen while profiling, so a
+    # code outside it is genuinely outside WMO. Tolerating it here would
+    # only move the block from this gate to Bronze -- later, after the file
+    # has already landed -- which is the failure this gate exists to prevent.
     known_weather_codes = (
         0, 1, 2, 3, 45, 48,
         51, 53, 55, 56, 57,
@@ -1316,10 +1317,10 @@ def run_weather_checks(connection, contract):
         create_result(
             check_name="weather_code_known_domain",
             check_type="DOMAIN",
-            severity="WARN",
+            severity="BLOCK",
             fail_count=invalid_weather_code,
             total_count=total_hours,
-            threshold_pct=0.1,
+            threshold_pct=0.0,
             details="weather_code should be one of the WMO codes Open-Meteo documents.",
         )
     )

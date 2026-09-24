@@ -133,9 +133,10 @@ top-level fields present (`latitude`, `longitude`, `elevation`, `hourly`),
 `weather_code`), hourly series not empty, `hourly.time` not null,
 `temperature_2m`/`precipitation`/`weather_code` not null, no duplicate
 `hourly.time` values, `hourly_series_has_no_gaps`, `temperature_2m` within
--50–60°C, `precipitation` non-negative, and `weather_code` against the known
-WMO code set (WARN severity — an unfamiliar code is not on its own proof of a
-malformed response).
+-50–60°C, `precipitation` non-negative, and `weather_code` against the full
+WMO code set. The range, non-negative, and WMO checks all block at 0%,
+matching the Bronze and Silver weather gates, which fail on the same
+conditions; tolerating them here would only defer the block to Bronze.
 
 A field entirely absent from the JSON (not merely null) is checked for by
 name rather than referenced directly, so a response missing e.g. `elevation`
