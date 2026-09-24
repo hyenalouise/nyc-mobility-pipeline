@@ -1,11 +1,11 @@
 {
   "source": "green_taxi",
   "inputs": [
-    "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2026-03.parquet",
-    "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2026-04.parquet",
-    "https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2026-05.parquet"
+    "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/green_tripdata_2026-03.parquet",
+    "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/green_tripdata_2026-04.parquet",
+    "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/green_tripdata_2026-05.parquet"
   ],
-  "check_count": 15,
+  "check_count": 16,
   "gate_result": "ACCEPTED",
   "exit_code": 0,
   "results": [
@@ -85,6 +85,17 @@
       "fail_pct": 0.0,
       "threshold_pct": 0.0,
       "details": "Trip distance must be zero or greater."
+    },
+    {
+      "check_name": "fare_amount_non_negative",
+      "check_type": "RANGE",
+      "severity": "INFO",
+      "status": "INFO",
+      "fail_count": 384,
+      "total_count": 133367,
+      "fail_pct": 0.2879,
+      "threshold_pct": null,
+      "details": "Negative fares are a known source trait: retained and flagged in Silver (D15). Counted, never blocking."
     },
     {
       "check_name": "dropoff_after_pickup",

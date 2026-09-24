@@ -1,6 +1,6 @@
 # Pre-Bronze Source Validation Checks
 
-The framework (severity model, PASS/WARN/FAIL statuses, the command line
+The framework (severity model, PASS/WARN/FAIL/INFO statuses, the command line
 itself) is shared across sources. The individual checks below are not --
 each source's business rules are different, so each has its own check list.
 
@@ -13,7 +13,9 @@ each source's business rules are different, so each has its own check list.
 5. pickup_timestamp_not_null
 6. dropoff_timestamp_not_null
 7. trip_distance_non_negative
-8. fare_amount_non_negative
+8. fare_amount_non_negative -- INFO: counted and reported, never blocking.
+   Negative fares are retained and flagged in Silver (D15), so refusing a
+   delivery for them would contradict the rest of the pipeline (D28).
 9. dropoff_after_pickup
 10. expected_month_coverage
 11. passenger_count_gt_8
