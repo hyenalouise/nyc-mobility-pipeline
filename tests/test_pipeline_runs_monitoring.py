@@ -52,3 +52,17 @@ def test_no_stuck_runs_uses_the_existing_stuck_threshold():
     assert "stuck_after_hours" in window, (
         "no_stuck_runs does not reference stuck_after_hours; it may be using a hardcoded threshold"
     )
+
+
+
+def test_no_stuck_runs_runs_before_the_status_update():
+    """The UPDATE records the run as FAILED only if a FAIL row already
+    exists, so check 8 must be written before it. After it, a stuck run
+    would be recorded as SUCCESS while the gate blocks."""
+    text = strip_sql_comments(CONTROL_GATE.read_text(encoding="utf-8"))
+    check_pos = text.find("'no_stuck_runs'")
+    update_pos = text.find("UPDATE `ftw-week-08`.`01-control`.pipeline_runs")
+    assert -1 < check_pos < update_pos, (
+        "no_stuck_runs is written after the pipeline_runs UPDATE, so a "
+        "stuck run would be recorded as SUCCESS while the gate blocks"
+    )
