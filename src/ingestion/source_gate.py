@@ -1213,4 +1213,12 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+
+    # Exit only to signal a failure. Databricks runs a job's Python file
+    # inside IPython, which reports even SystemExit(0) as a failed task (run
+    # 159238056445742 failed two ACCEPTED gates that way). Returning normally
+    # is success everywhere, and a non-zero code still fails the task and
+    # sets the process exit status that CI checks.
+    if exit_code != EXIT_ACCEPTED:
+        sys.exit(exit_code)

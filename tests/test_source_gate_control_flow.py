@@ -209,3 +209,32 @@ def test_the_gate_runs_the_way_a_databricks_job_runs_it(tmp_path, monkeypatch):
     assert "__file__" not in namespace
     assert namespace["REPO_ROOT"] == REPO_ROOT
     assert namespace["CONTRACT_PATH"].is_file()
+
+
+def _exec_as_job(tmp_path, monkeypatch, row):
+    """Run the gate file as __main__ the way a Databricks job does."""
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, row)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--evidence", str(tmp_path / "e.json")],
+    )
+    script = Path(source_gate.__file__)
+    exec(compile(script.read_bytes(), str(script), "exec"), {"__name__": "__main__"})
+
+
+def test_an_accepted_gate_does_not_raise_systemexit(tmp_path, monkeypatch):
+    # IPython reports SystemExit(0) as a failed task (#148, run
+    # 159238056445742), so success must be a normal return.
+    _exec_as_job(tmp_path, monkeypatch, CLEAN_ROW)
+
+
+def test_a_blocked_gate_still_exits_with_its_code(tmp_path, monkeypatch):
+    bad_row = list(CLEAN_ROW)
+    bad_row[[name for name, _ in COLUMNS].index("trip_distance")] = -1.0
+
+    with pytest.raises(SystemExit) as exited:
+        _exec_as_job(tmp_path, monkeypatch, bad_row)
+
+    assert exited.value.code == source_gate.EXIT_BLOCKED
