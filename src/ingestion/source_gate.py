@@ -999,7 +999,7 @@ def control_rows(source, inputs, results, run_id, code_revision):
             revision,
             # The same placeholder the SQL gates write until #126 names
             # an owner per check.
-            "TODO",
+            "Ina Magno",
             evidence_location,
             result["details"],
         )
