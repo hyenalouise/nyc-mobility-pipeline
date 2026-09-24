@@ -48,13 +48,12 @@ Times are local (UTC+8), as the job UI shows them. `executed_at` values from SQL
 | `ingestion_batches` | 8 | 8 |
 | `dq_source_rows` | 121 | 201 |
 
-**[Screenshot: before and after query results]**
+<img width="1059" height="828" alt="image" src="https://github.com/user-attachments/assets/aae0fce5-94d2-4bed-b5a3-4056987d954b" />
 
 `green_taxi_raw` has 0 rows whose `source_file` is in `_test`. The three landing files kept their original sizes and modification dates (14 and 19 Sept). The 80 new source rows are one set per gate attempt, broken down below.
 
 ## The blocked run
-
-**[Screenshot: timeline of run 1057607894632804, with job parameters showing the override]**
+<img width="1514" height="1026" alt="image" src="https://github.com/user-attachments/assets/d4c64c8d-de77-4bc2-86da-58d29bfb4be6" />
 
 | Tasks | Result |
 |---|---|
@@ -74,7 +73,7 @@ The gate's output:
     Exit code: 1
     Recorded 16 rows in `ftw-week-08`.`01-control`.data_quality_results
 
-**[Screenshot: 05_source_gate_green_taxi, Original attempt, output and parameters]**
+<img width="1520" height="1003" alt="image" src="https://github.com/user-attachments/assets/00854868-20df-41de-85de-ba616b618471" />
 
 The task's resolved parameters show `--input /Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet`, so the job parameter reached the gate. The rows were recorded before the task exited, so the refusal is in `data_quality_results` and not only in the task log.
 
@@ -82,7 +81,7 @@ The task's resolved parameters show `--input /Volumes/ftw-week-08/00-source/grou
 
 The job sets no retries, but the failed gate ran a second time about a minute later. The task page shows it as "Retry: 1st", launched "By retry scheduler". The retry read the same files and refused them the same way: same check, same 5 rows, exit 1, and its own 16 rows with its own `run_id`.
 
-**[Screenshot: 05_source_gate_green_taxi, Retry 1st, launched by retry scheduler]**
+<img width="1517" height="1001" alt="image" src="https://github.com/user-attachments/assets/ae80ad9d-1ffa-44cb-99cf-d1a4c5e8399e" />
 
 So retrying identical bad input fails identically, which is correct. It also costs a minute and a second set of FAIL rows for a verdict that can't change, so gate tasks should probably not be retried (follow-up below).
 
@@ -102,7 +101,7 @@ So retrying identical bad input fails identically, which is correct. It also cos
 | `1a22cf3e…` | taxi_zones | 8 | 0 | 16:50:25 | rerun with defaults |
 | `1bfaf823…` | green_taxi | 16 | 0 | 16:50:28 | rerun with defaults |
 
-**[Screenshot: gate attempts query result]**
+<img width="1059" height="425" alt="image" src="https://github.com/user-attachments/assets/a50b62b5-ef5c-44f6-ae1c-4c558dbc25db" />
 
 16 + 16 + 16 + 16 + 8 + 8 = 80 rows, which is the 121 → 201 above. The cancelled run wrote none. Only the two attempts that read the test folder have a FAIL.
 
@@ -110,13 +109,13 @@ So retrying identical bad input fails identically, which is correct. It also cos
 
 The plan in #158 expected a repair with nothing changed to fail the same way. It succeeded instead: the repaired gate was ACCEPTED, the loader ran, and all 21 repaired tasks succeeded.
 
-**[Screenshot: 05_source_gate_green_taxi, Repair 1, ACCEPTED with the landing path]**
+<img width="1512" height="1004" alt="image" src="https://github.com/user-attachments/assets/ab79f40f-755b-4aaa-8208-dbebbea63b60" />
 
 The repair was started from the CLI, `databricks jobs repair-run 1057607894632804 --rerun-all-failed-tasks`, with no parameters. The run still records the override, but the repaired gate's resolved `--input` was the landing default, `/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet`. The gate checked the real files, which pass, and the loader then read the same landing files, found them already loaded, and added nothing. Bronze stayed 133,367 and `ingestion_batches` stayed 8.
 
 That is safe, because the gate and the loader read the same files. It does mean **a repair is not a retry of a test run** unless the override is passed again. The Repair dialog in the UI shows `green_taxi_input` with a remove button where the defaults have an edit button, which suggests the UI carries the override into the repair; the value is cut off in the screenshot, so that part is not confirmed.
 
-**[Screenshot: Repair job run dialog, Parameters]**
+<img width="1357" height="574" alt="image" src="https://github.com/user-attachments/assets/0096f466-8328-4818-9549-0e5acdd1cb64" />
 
 The general point, for #121: a repair re-runs the failed tasks and succeeds only if what made them fail has changed. A temporary platform failure can simply be repaired. A BLOCK on bad data fails again on every repair until the data is fixed; here it passed only because the input changed.
 
@@ -124,13 +123,13 @@ The general point, for #121: a repair re-runs the failed tasks and succeeds only
 
 Run `896268451335384`, no overrides: **32 of 32 tasks succeeded**. Both gates were ACCEPTED on the landing files, the loaders added nothing, and every Bronze, Silver, Integration, Gold and Analytics gate passed. The counts are those in "Before and after".
 
-**[Screenshot: timeline of run 896268451335384, all green, default job parameters]**
+<img width="1512" height="959" alt="image" src="https://github.com/user-attachments/assets/a6d3ef5b-829a-49e6-bb06-4faa9670848d" />
 
 ## A run that hung
 
 The first blocked run, `196037847989948`, gave the right verdicts within a minute (Green Taxi BLOCKED on the same check, Taxi Zones ACCEPTED) but then both gates hung while writing their rows to `data_quality_results`. They wrote nothing, and after 24 minutes the run was cancelled. Weather had already loaded and passed its gates in that run.
 
-**[Screenshot: timeline of run 196037847989948, both gates at 24m, cancelled]**
+<img width="1515" height="932" alt="image" src="https://github.com/user-attachments/assets/b1b4579c-dd11-4563-9b85-ebb1c565fcbe" />
 
 It was not caused by the override: the Taxi Zones gate hung the same way on its default input, and the same code wrote its rows in about a minute in the runs before and after. It did not happen again in this session. The job has no timeout, so nothing would have stopped it on its own.
 
