@@ -101,8 +101,10 @@ flowchart LR
 Each gate reads its input from a job parameter, `green_taxi_input` or `taxi_zones_input`. The default is the landing path its loader reads, so a normal or scheduled run checks exactly what gets loaded. To show a gate refusing a bad delivery, stage the bad file in a separate folder and point only that gate at it:
 
 ```bash
-databricks bundle run NYC_Mobility_Pipeline --target dev --profile crystal-workspace --params green_taxi_input=/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet
+databricks bundle run NYC_Mobility_Pipeline --target dev --profile crystal-workspace --params 'green_taxi_input=/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet'
 ```
+
+Keep the quotes. Without them zsh, the default shell on a Mac, tries to expand the `*` itself and stops with `no matches found` before the job starts.
 
 The loaders always read the landing folder, so test data is never loaded. That makes a run with an override a test, not a load: use it only to make a gate refuse something. If the gate passed, its loader would load landing files this run didn't check.
 

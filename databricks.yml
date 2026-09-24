@@ -392,7 +392,7 @@ resources:
         # exactly what gets loaded. Override one to make a gate refuse a test
         # delivery staged outside the landing folder:
         #   databricks bundle run NYC_Mobility_Pipeline \
-        #     --params green_taxi_input=/Volumes/.../_test/green_taxi_blocked/*.parquet
+        #     --params 'green_taxi_input=/Volumes/.../_test/green_taxi_blocked/*.parquet'
         # The loaders always read the landing folder, so test data is never
         # loaded. A run with an override is therefore a test, not a load: if
         # the gate passed, its loader would load files this run didn't check.
