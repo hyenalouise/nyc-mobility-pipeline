@@ -31,7 +31,7 @@ targets:
     default: true
     workspace:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
-      
+
     resources:
       jobs:
         NYC_Mobility_Pipeline:

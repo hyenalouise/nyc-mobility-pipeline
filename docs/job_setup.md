@@ -8,9 +8,6 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 
 | Setting | Value |
 |---|---|
-
-| Setting | Value |
-|---|---|
 | Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
 | Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
 | Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
@@ -119,26 +116,11 @@ Placeholder files already end with a `raise_error`, so an unimplemented stage fa
 
 ## Failure notifications
 
-`email_notifications.on_failure` in `databricks.yml` sends an email to the
-whole team the moment any task fails — not just whoever happens to open
-Databricks and notice. This exists because of the Day 9 incident: a Silver
-gate blocked correctly, but with no notification, a stale dashboard reached
-management before the team knew anything had failed.
+`email_notifications.on_failure` sends an email the moment any task fails, so a failure reaches a person instead of waiting for someone to open Databricks. This exists because of the Day 9 incident: a Silver gate blocked correctly, but with no notification, a stale dashboard reached management before the team knew anything had failed.
 
-Sent to every team member rather than one shared inbox, since one person
-being unavailable should not mean nobody finds out:
+Who gets it depends on the target. In `dev`, only the person who deployed that job (`${workspace.current_user.userName}`), since each dev job is someone's own sandbox. In `prod`, the whole team, listed in the prod target in `databricks.yml`, so one person being unavailable doesn't mean nobody finds out. A cancelled run sends nothing (`no_alert_for_canceled_runs`).
 
-- briana.capul@ftwfoundation.org
-- hazelle.cuevas@ftwfoundation.org
-- crystal.manas@ftwfoundation.org
-- gabrielle.torres@ftwfoundation.org
-- ina.magno@ftwfoundation.org
-
-No duration-based warning is configured, since no duration threshold is
-currently set for this job. A blocked gate and a genuine task crash both
-trigger the same notification for now; distinguishing them would need logic
-beyond Databricks' native job-level notifications, which is out of scope
-here (see #131).
+No duration-based warning is configured, since no duration threshold is currently set for this job. A blocked gate and a genuine task crash trigger the same email for now; telling them apart would need logic beyond Databricks' native job notifications, which is out of scope here (see #131).
 
 ## Proof runs
 
