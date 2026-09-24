@@ -9,7 +9,7 @@ that has never held these dashboards creates them there (#122).
 
 ## Available Dashboards
 
-### 1. Pipeline Data Quality Dashboard
+### 1. NYC Mobility Data Quality Dashboard
 
 Related Issue: #44
 Definition file: `11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json`
