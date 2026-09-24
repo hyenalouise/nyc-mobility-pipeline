@@ -238,3 +238,44 @@ def test_a_blocked_gate_still_exits_with_its_code(tmp_path, monkeypatch):
         _exec_as_job(tmp_path, monkeypatch, bad_row)
 
     assert exited.value.code == source_gate.EXIT_BLOCKED
+
+
+def test_a_test_input_that_passes_still_stops_the_loader(tmp_path, monkeypatch):
+    # An override run checks a staged file while the loader reads the landing
+    # folder. If the staged file passes, the task must still fail, or the
+    # loader would load files this run never checked (#159).
+    exit_code, recorded = _run_main(
+        tmp_path, monkeypatch, CLEAN_ROW,
+        ["--load-input", "/Volumes/landing/green_taxi/*.parquet", "--record-control"],
+    )
+
+    assert exit_code == source_gate.EXIT_TEST_INPUT
+    assert len(recorded) == 1, "the results are still recorded before the task fails"
+    evidence = json.loads((tmp_path / "e.json").read_text())
+    assert evidence["gate_result"] == "ACCEPTED"
+
+
+def test_a_test_input_that_is_blocked_keeps_its_blocked_code(tmp_path, monkeypatch):
+    bad_row = list(CLEAN_ROW)
+    bad_row[[name for name, _ in COLUMNS].index("trip_distance")] = -1.0
+
+    exit_code, _ = _run_main(tmp_path, monkeypatch, bad_row, ["--load-input", "/Volumes/landing/green_taxi/*.parquet"])
+
+    assert exit_code == source_gate.EXIT_BLOCKED
+
+
+def test_the_real_input_passes_as_before(tmp_path, monkeypatch):
+    # A normal run: the gate checks exactly what the loader reads.
+    contract_path = tmp_path / "source_contract.json"
+    _write_contract(contract_path)
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, CLEAN_ROW)
+    monkeypatch.setattr(source_gate, "CONTRACT_PATH", contract_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--load-input", str(parquet_path), "--evidence", str(tmp_path / "e.json")],
+    )
+
+    assert source_gate.main() == source_gate.EXIT_ACCEPTED
+

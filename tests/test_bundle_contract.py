@@ -240,6 +240,15 @@ def argument(task, flag):
     return parameters[parameters.index(flag) + 1]
 
 
+def resolved(value):
+    """A task argument as a normal run sees it: a {{job.parameters.X}}
+    reference becomes X's default."""
+    match = re.fullmatch(r"\{\{job\.parameters\.(\w+)\}\}", value)
+    if not match:
+        return value
+    return next(p["default"] for p in job()["parameters"] if p["name"] == match.group(1))
+
+
 def ungated_loaders(job_definition):
     """Gated sources whose Bronze loader does not wait for that source's gate."""
     gates = gate_tasks(job_definition)
@@ -268,7 +277,7 @@ def test_every_bronze_loader_waits_for_its_source_gate():
 def test_the_gates_read_the_volume_and_record_the_deployed_revision():
     control_setup = task_running(job(), "etl/01_control/00_create_control_tables.sql")["task_key"]
     for source, task in gate_tasks(job()).items():
-        assert argument(task, "--input").startswith("/Volumes/"), (
+        assert resolved(argument(task, "--input")).startswith("/Volumes/"), (
             f"the {source} gate does not read the Volume, so it checks different files "
             "than the Bronze loader loads."
         )
@@ -299,6 +308,88 @@ def test_the_dq_dashboard_waits_for_the_source_gates():
     upstream = {d["task_key"] for d in dashboard["depends_on"]}
     missing = {t["task_key"] for t in gate_tasks(job()).values()} - upstream
     assert not missing, f"the DQ dashboard can refresh before {sorted(missing)} has recorded its verdict."
+
+
+def loader_reads(loader_path):
+    """The path a Bronze loader passes to read_files, written the way the
+    gate reads it. read_files takes a folder plus a format; DuckDB needs a
+    glob, so a folder becomes the folder's files of that format."""
+    text = (REPO_ROOT / loader_path).read_text(encoding="utf-8")
+    path = re.search(r"read_files\(\s*'([^']+)'", text).group(1)
+    if path.endswith("/"):
+        return path + "*." + re.search(r"format\s*=>\s*'(\w+)'", text).group(1)
+    return path
+
+
+def misplaced_gate_inputs(job_definition, parameters):
+    """Gated sources whose gate would, by default, check something other than
+    what their loader loads."""
+    defaults = {p["name"]: p["default"] for p in parameters}
+    misplaced = []
+    for source, task in gate_tasks(job_definition).items():
+        name = argument(task, "--input").removeprefix("{{job.parameters.").removesuffix("}}")
+        if defaults.get(name) != loader_reads(LOADERS[source]):
+            misplaced.append(source)
+    return misplaced
+
+
+def test_each_gate_reads_its_own_input_parameter():
+    """Overriding one gate's input for a controlled test (#158) must leave
+    the other gate reading its landing folder."""
+    for source, task in gate_tasks(job()).items():
+        assert argument(task, "--input") == f"{{{{job.parameters.{source}_input}}}}", (
+            f"the {source} gate does not read the job parameter {source}_input."
+        )
+
+
+def test_each_gate_input_defaults_to_what_its_loader_reads():
+    """A normal or scheduled run must check exactly what gets loaded. A test
+    folder committed as the default would check one thing and load another."""
+    assert misplaced_gate_inputs(job(), job()["parameters"]) == []
+
+
+def test_the_gate_input_rule_would_catch_a_test_folder_default():
+    parameters = copy.deepcopy(job()["parameters"])
+    next(p for p in parameters if p["name"] == "green_taxi_input")["default"] = (
+        "/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet"
+    )
+    assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
+
+
+def test_the_gate_input_rule_would_catch_a_test_folder_inside_the_landing_folder():
+    """A prefix match would accept this: it starts with the landing folder the
+    loader reads, but the gate would check one file and the loader load all."""
+    parameters = copy.deepcopy(job()["parameters"])
+    next(p for p in parameters if p["name"] == "green_taxi_input")["default"] = (
+        "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/_test/blocked.parquet"
+    )
+    assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
+
+
+def gates_not_told_what_their_loader_reads(job_definition):
+    """Gated sources whose gate can't tell a test input from the real one,
+    because its --load-input is missing or isn't its loader's path."""
+    wrong = []
+    for source, task in gate_tasks(job_definition).items():
+        parameters = task["spark_python_task"]["parameters"]
+        if "--load-input" not in parameters or argument(task, "--load-input") != loader_reads(LOADERS[source]):
+            wrong.append(source)
+    return wrong
+
+
+def test_each_gate_knows_exactly_what_its_loader_reads():
+    """An override run must never load (#159). The gate stops its task when
+    its input differs from --load-input, which only works if --load-input is
+    exactly what the loader reads."""
+    assert gates_not_told_what_their_loader_reads(job()) == []
+
+
+def test_the_load_input_rule_would_catch_a_gate_without_it():
+    broken = copy.deepcopy(job())
+    parameters = gate_tasks(broken)["taxi_zones"]["spark_python_task"]["parameters"]
+    index = parameters.index("--load-input")
+    del parameters[index:index + 2]
+    assert gates_not_told_what_their_loader_reads(broken) == ["taxi_zones"]
 
 
 def test_the_gate_rule_would_catch_its_regression():

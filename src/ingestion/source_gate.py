@@ -63,6 +63,9 @@ EXIT_ACCEPTED = 0
 EXIT_BLOCKED = 1
 EXIT_INVALID_CONFIGURATION = 2
 EXIT_INPUT_UNAVAILABLE = 3
+# The checks ran on a test input, not on what the loader will load, so the
+# task fails whatever the verdict and the loader cannot run (#159).
+EXIT_TEST_INPUT = 4
 
 
 def load_json(path):
@@ -1698,6 +1701,17 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--load-input",
+        default=None,
+        help=(
+            "The path this source's Bronze loader reads. The job passes it "
+            "so that when --input points anywhere else, the gate records its "
+            "results and then fails with exit 4 even if the input is "
+            "ACCEPTED: nothing is loaded that this run didn't check (#159)."
+        ),
+    )
+
+    parser.add_argument(
         "--code-revision",
         default="",
         help=(
@@ -1784,7 +1798,24 @@ def main():
         gate_result = "ACCEPTED"
         exit_code = EXIT_ACCEPTED
 
+    # A test run points --input at a staged delivery while the loader still
+    # reads the landing folder. If the test input passed, letting the task
+    # succeed would load landing files this run never checked, so it fails
+    # instead. A BLOCKED test input already stops the loader and keeps its
+    # own exit code.
+    test_input = args.load_input is not None and inputs != [args.load_input]
+
+    if test_input and exit_code == EXIT_ACCEPTED:
+        exit_code = EXIT_TEST_INPUT
+
     print(f"\nGate result: {gate_result}")
+
+    if test_input:
+        print(
+            f"Test input: this run checked {inputs}, but the loader reads "
+            f"{args.load_input}. Nothing will be loaded."
+        )
+
     print(f"Exit code: {exit_code}")
 
     evidence_path = (

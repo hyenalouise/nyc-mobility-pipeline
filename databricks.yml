@@ -84,6 +84,8 @@ resources:
               - --source
               - green_taxi
               - --input
+              - "{{job.parameters.green_taxi_input}}"
+              - --load-input
               - /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
               - --evidence
               - /tmp/source_gate_green_taxi.json
@@ -101,6 +103,8 @@ resources:
               - --source
               - taxi_zones
               - --input
+              - "{{job.parameters.taxi_zones_input}}"
+              - --load-input
               - /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
               - --evidence
               - /tmp/source_gate_taxi_zones.json
@@ -120,6 +124,8 @@ resources:
               - --source
               - weather
               - --input
+              - "{{job.parameters.weather_input}}"
+              - --load-input
               - /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
               - --evidence
               - /tmp/source_gate_weather.json
@@ -405,6 +411,24 @@ resources:
       parameters:
         - name: code_revision
           default: ${bundle.git.commit}
+
+        # What each source gate reads (#158). The defaults are the landing
+        # paths the Bronze loaders read, so a normal or scheduled run checks
+        # exactly what gets loaded. Override one to make a gate refuse a test
+        # delivery staged outside the landing folder:
+        #   databricks bundle run NYC_Mobility_Pipeline \
+        #     --params 'green_taxi_input=/Volumes/.../_test/green_taxi_blocked/*.parquet'
+        # The loaders always read the landing folder, so test data is never
+        # loaded. Each gate is also given its loader's path (--load-input):
+        # when its input differs, the gate records its results and then fails
+        # even if the test input passed, so an override run never loads
+        # landing files it didn't check (#159).
+        - name: green_taxi_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+        - name: taxi_zones_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+        - name: weather_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
 
       # Pinned to a commit, not a branch, and deliberately.
       #
