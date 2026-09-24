@@ -49,18 +49,18 @@ guess which schema a folder writes to.
 | 01 | Control: runs, ingestion batches, DQ results | `etl/01_control/` | `ftw-week-08`.`01-control` |
 | 02 | Bronze: source landed with provenance, unchanged | `etl/02_bronze/` | `ftw-week-08`.`02-bronze` |
 | 03 | Silver: typed, standardized, deduplicated, same grain | `etl/03_silver/` | `ftw-week-08`.`03-silver` |
-| 04 | Integration: trips resolved to zones and weather | `etl/04_integration/` | `ftw-week-08`.`05-gold` |
+| 04 | Integration: trips resolved to zones and weather | `etl/04_integration/` | `ftw-week-08`.`04-integration` |
 | 05 | Gold: approved facts and built dimensions | `etl/05_gold/` | `ftw-week-08`.`05-gold` |
 | 06 | Analytics: one dataset per business question | `etl/06_analytics/` | `ftw-week-08`.`06-analytics` |
 
 What each stage is responsible for is defined in
 [architecture.md](architecture.md). This document only fixes the names.
 
-A stage number identifies a step, not a schema. Stage 00 creates no tables, and
-stage 04 writes into Gold: resolving a trip to its zones and weather hour adds
-columns without changing the grain of a trip, so it is not a separate layer. The
-`04-` slot is left empty rather than renumbering Gold and Analytics, so that an
-`04-integration` schema can be added later without renaming anything.
+A stage number identifies the pipeline stage and, where that stage persists
+tables, the corresponding Unity Catalog schema. Stage 00 contains source files
+rather than project tables. Stage 04 persists the integration mappings used to
+resolve trips to taxi zones and weather observations in
+`ftw-week-08`.`04-integration`.
 
 The source Volume remains in the existing `00-source` schema. No project tables
 are created in `00-source`.
