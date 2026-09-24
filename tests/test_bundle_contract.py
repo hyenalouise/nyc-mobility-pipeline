@@ -311,9 +311,14 @@ def test_the_dq_dashboard_waits_for_the_source_gates():
 
 
 def loader_reads(loader_path):
-    """The path a Bronze loader passes to read_files."""
+    """The path a Bronze loader passes to read_files, written the way the
+    gate reads it. read_files takes a folder plus a format; DuckDB needs a
+    glob, so a folder becomes the folder's files of that format."""
     text = (REPO_ROOT / loader_path).read_text(encoding="utf-8")
-    return re.search(r"read_files\(\s*'([^']+)'", text).group(1)
+    path = re.search(r"read_files\(\s*'([^']+)'", text).group(1)
+    if path.endswith("/"):
+        return path + "*." + re.search(r"format\s*=>\s*'(\w+)'", text).group(1)
+    return path
 
 
 def misplaced_gate_inputs(job_definition, parameters):
@@ -323,7 +328,7 @@ def misplaced_gate_inputs(job_definition, parameters):
     misplaced = []
     for source, task in gate_tasks(job_definition).items():
         name = argument(task, "--input").removeprefix("{{job.parameters.").removesuffix("}}")
-        if not defaults.get(name, "").startswith(loader_reads(LOADERS[source])):
+        if defaults.get(name) != loader_reads(LOADERS[source]):
             misplaced.append(source)
     return misplaced
 
@@ -347,6 +352,16 @@ def test_the_gate_input_rule_would_catch_a_test_folder_default():
     parameters = copy.deepcopy(job()["parameters"])
     next(p for p in parameters if p["name"] == "green_taxi_input")["default"] = (
         "/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet"
+    )
+    assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
+
+
+def test_the_gate_input_rule_would_catch_a_test_folder_inside_the_landing_folder():
+    """A prefix match would accept this: it starts with the landing folder the
+    loader reads, but the gate would check one file and the loader load all."""
+    parameters = copy.deepcopy(job()["parameters"])
+    next(p for p in parameters if p["name"] == "green_taxi_input")["default"] = (
+        "/Volumes/ftw-week-08/00-source/group_a_source/green_taxi/_test/blocked.parquet"
     )
     assert misplaced_gate_inputs(job(), parameters) == ["green_taxi"]
 
