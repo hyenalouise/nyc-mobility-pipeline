@@ -28,16 +28,17 @@ def test_no_stuck_runs_check_exists_and_targets_pipeline_runs():
     )
 
 
-def test_no_stuck_runs_runs_after_the_run_is_finalized():
-    """The check must run after the UPDATE that finalizes this run's own
-    status, so a run in progress cannot flag itself as stuck."""
+def test_no_stuck_runs_excludes_its_own_run():
+    """The check must exclude the current run's own row explicitly, so a
+    run in progress cannot flag itself as stuck regardless of where this
+    check falls relative to the UPDATE that finalizes the run's status."""
     text = strip_sql_comments(CONTROL_GATE.read_text(encoding="utf-8"))
-    update_pos = text.find("UPDATE `ftw-week-08`.`01-control`.pipeline_runs")
     check_pos = text.find("'no_stuck_runs'")
-    assert update_pos != -1 and check_pos != -1, "expected both the UPDATE and the no_stuck_runs check to be present"
-    assert update_pos < check_pos, (
-        "no_stuck_runs check appears before the pipeline_runs UPDATE -- it would "
-        "see this run still as STARTED and could flag itself"
+    assert check_pos != -1, "no_stuck_runs check not found"
+    window = text[check_pos:check_pos + 800]
+    assert "run_id <> dq_run_id" in window, (
+        "no_stuck_runs does not exclude its own run_id -- it could flag "
+        "itself while still in progress"
     )
 
 

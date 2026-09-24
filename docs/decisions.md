@@ -1029,6 +1029,10 @@ query behavior or require any reader/writer on current Databricks compute to
 change anything, but it is a one-way change worth knowing about if the
 table's properties are inspected later.
 
+A seeded test row (`demo-stuck-run-001`), used earlier to produce evidence of
+a failing gate run, was also deleted directly from the live table (table
+version 21) as part of this same cleanup.
+
 **Files:**
 
 - `etl/01_control/90_validate_control.sql`

@@ -215,9 +215,10 @@ WHERE run_id = dq_run_id;
 -- ------------------------------------------------------------
 -- 8. Stuck runs. Mirrors check 4 (no_stuck_batches), but for pipeline_runs
 --    itself: a run still STARTED long after it began was abandoned by a
---    crash or a hung job, not something genuinely in progress. Runs after
---    the UPDATE above so this run's own row is already finalized and can't
---    flag itself while it's still fresh.
+--    crash or a hung job, not something genuinely in progress. Excludes
+--    this run's own row explicitly (run_id <> dq_run_id), so a run cannot
+--    flag itself while still in progress, regardless of where this check
+--    falls relative to the UPDATE above.
 -- ------------------------------------------------------------
 INSERT INTO `ftw-week-08`.`01-control`.data_quality_results
 SELECT
@@ -248,6 +249,7 @@ FROM (
     SELECT
         COUNT_IF(
             status = 'STARTED'
+            AND run_id <> dq_run_id
             AND started_at < current_timestamp() - MAKE_INTERVAL(0, 0, 0, 0, stuck_after_hours)
         ) AS fail_count,
         COUNT(*) AS total_count
