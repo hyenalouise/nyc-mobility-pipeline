@@ -106,6 +106,8 @@ databricks bundle run NYC_Mobility_Pipeline --target dev --profile crystal-works
 
 Keep the quotes. Without them zsh, the default shell on a Mac, tries to expand the `*` itself and stops with `no matches found` before the job starts.
 
+To repeat a test, start a new run with the override. A repair started from the CLI without parameters goes back to the defaults, so its gate checks the landing folder instead of the test folder (#158).
+
 The loaders always read the landing folder, so test data is never loaded. That makes a run with an override a test, not a load: use it only to make a gate refuse something. If the gate passed, its loader would load landing files this run didn't check.
 
 The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
