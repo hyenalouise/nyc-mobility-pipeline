@@ -6,7 +6,13 @@ from pathlib import Path
 import duckdb
 
 
-CONTRACT_PATH = Path("config/source_contract.json")
+# Resolved from this file, not from the working directory. As a job task the
+# script runs from a Git checkout whose working directory is not guaranteed
+# to be the repository root, so a relative path could miss the contract.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
+EVIDENCE_DIR = REPO_ROOT / "evidence" / "proof" / "source-validation"
 
 # Green Taxi keeps its original, already-committed filename (results.json,
 # referenced by docs/duckdb/evidence.md) so this fix stays backward
@@ -14,14 +20,14 @@ CONTRACT_PATH = Path("config/source_contract.json")
 # of sharing that path -- which is what let a taxi_zones run silently
 # overwrite Green Taxi's committed evidence before this fix.
 DEFAULT_EVIDENCE_PATHS = {
-    "green_taxi": Path("evidence/proof/source-validation/results.json"),
+    "green_taxi": EVIDENCE_DIR / "results.json",
 }
 
 
 def default_evidence_path(source):
     return DEFAULT_EVIDENCE_PATHS.get(
         source,
-        Path(f"evidence/proof/source-validation/{source}_results.json"),
+        EVIDENCE_DIR / f"{source}_results.json",
     )
 
 # Local view name each source is loaded into. Kept separate per source so a

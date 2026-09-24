@@ -134,3 +134,22 @@ def test_a_negative_fare_is_reported_not_blocking(gate_run):
     assert evidence["gate_result"] == "ACCEPTED"
     fare = next(r for r in evidence["results"] if r["check_name"] == "fare_amount_non_negative")
     assert (fare["severity"], fare["status"], fare["fail_count"]) == ("INFO", "INFO", 1)
+
+
+def test_the_gate_finds_its_contract_from_any_working_directory(tmp_path, monkeypatch):
+    # A job task runs the script from a Git checkout, not necessarily from
+    # the repository root (#148). The real contract must still be found.
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, CLEAN_ROW)
+    evidence_path = tmp_path / "evidence.json"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--evidence", str(evidence_path)],
+    )
+
+    assert source_gate.CONTRACT_PATH.is_absolute()
+    assert source_gate.main() == source_gate.EXIT_ACCEPTED
+    assert source_gate.default_evidence_path("green_taxi").is_absolute()
