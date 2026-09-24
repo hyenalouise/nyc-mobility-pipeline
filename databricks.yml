@@ -32,6 +32,13 @@ targets:
     workspace:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
 
+    resources:
+      jobs:
+        NYC_Mobility_Pipeline:
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
+
   # Deploys under the real job name with no prefix. Only after a dev deploy
   # has been verified.
   #
@@ -47,6 +54,17 @@ targets:
     workspace:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+
+    resources:
+      jobs:
+        NYC_Mobility_Pipeline:
+          email_notifications:
+            on_failure:
+              - briana.capul@ftwfoundation.org
+              - hazelle.cuevas@ftwfoundation.org
+              - crystal.manas@ftwfoundation.org
+              - gabrielle.torres@ftwfoundation.org
+              - ina.magno@ftwfoundation.org
 
 resources:
   dashboards:
@@ -450,16 +468,20 @@ resources:
         enabled: true
       performance_target: PERFORMANCE_OPTIMIZED
 
-      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so a
-      # daily run would find nothing new on almost every day; weekly bounds how
-      # long a newly landed file waits to one week, and gives freshness
+      notification_settings:
+        no_alert_for_canceled_runs: true
+
+      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so
+      # a daily run would find nothing new on almost every day; weekly bounds
+      # how long a newly landed file waits to one week, and gives freshness
       # monitoring an interval to measure against.
       #
       # Quartz syntax, not crontab: seconds first, and `?` in the day-of-month
-      # position because day-of-week is set. "0 6 * * 1" would not mean this.
+      # position because day-of-week is set. "0 6 * * 1" would not mean the
+      # same thing here.
       #
       # No pause_status here, deliberately. Left unset, the target decides:
-      # dev (development mode) deploys it PAUSED so nobody's sandbox fires on
+      # dev (development mode) deploys it PAUSED so nobody's sandbox fires
       # a timer, and prod deploys it UNPAUSED. Setting it on the job would
       # override that for every target.
       schedule:

@@ -13,7 +13,7 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 | Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
 | Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25). `green_taxi_input`, `taxi_zones_input` and `weather_input`, which default to the landing paths the loaders read, and can point one gate at a test folder (#158) |
 | Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
-| Notifications | None yet. Alerting on failure is #131 |
+| Notifications | Email on failure. In `dev`, only the person who deployed it (`${workspace.current_user.userName}`); in `prod`, the whole team, since that's a shared pipeline (#131) |
 
 Using the Git provider rather than a personal Git folder means every run uses reviewed code and records the commit it ran.
 
@@ -130,6 +130,14 @@ WHERE run_id = dq_run_id;
 ```
 
 Placeholder files already end with a `raise_error`, so an unimplemented stage fails instead of looking successful. Remove that block when the query is written.
+
+## Failure notifications
+
+`email_notifications.on_failure` sends an email the moment any task fails, so a failure reaches a person instead of waiting for someone to open Databricks. This exists because of the Day 9 incident: a Silver gate blocked correctly, but with no notification, a stale dashboard reached management before the team knew anything had failed.
+
+Who gets it depends on the target. In `dev`, only the person who deployed that job (`${workspace.current_user.userName}`), since each dev job is someone's own sandbox. In `prod`, the whole team, listed in the prod target in `databricks.yml`, so one person being unavailable doesn't mean nobody finds out. A cancelled run sends nothing (`no_alert_for_canceled_runs`).
+
+No duration-based warning is configured, since no duration threshold is currently set for this job. A blocked gate and a genuine task crash trigger the same email for now; telling them apart would need logic beyond Databricks' native job notifications, which is out of scope here (see #131).
 
 ## Proof runs
 
