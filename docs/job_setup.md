@@ -108,9 +108,9 @@ Keep the quotes. Without them zsh, the default shell on a Mac, tries to expand t
 
 To repeat a test, start a new run with the override. A repair started from the CLI without parameters goes back to the defaults, so its gate checks the landing folder instead of the test folder (#158).
 
-The loaders always read the landing folder, so test data is never loaded. That makes a run with an override a test, not a load: use it only to make a gate refuse something. If the gate passed, its loader would load landing files this run didn't check.
+The loaders always read the landing folder, so test data is never loaded. An override run also never loads anything else: each gate is given the path its loader reads (`--load-input`), and when its input differs, the gate records its results and then fails its task even if the test input passed (exit 4). The loader and everything after it are skipped, so no run loads landing files it didn't check (#159). `tests/test_bundle_contract.py` fails if a gate's `--load-input` or its parameter's default stops matching its loader's path exactly.
 
-The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
+The gate is Python, and the SQL warehouse only runs SQL, so these three tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
 
 ## What makes a gate real
 
