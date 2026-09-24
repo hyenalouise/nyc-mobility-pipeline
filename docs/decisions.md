@@ -1143,6 +1143,8 @@ Silver keeps all four conditions and flags them (D15). Each check still got its 
 - After: 17 checks, `ACCEPTED`, exit 0; `dropoff_before_pickup` `WARN`, 1 row (0.0007%); `zero_length_trip` `INFO`, 99 rows. Each month on its own is also `ACCEPTED`.
 - `tests/test_source_gate_severities.py` pins each severity, and checks the effect: a delivery with 2% zero-length trips is `ACCEPTED`, and one with 2% reversed trips is `BLOCKED` on `dropoff_before_pickup`. All four tests fail against the previous code.
 
+**Verified on the dev job, 2026-09-24:** deployed `9bc870e` and ran it (run `1115563914656407`): all 32 tasks succeeded. The source-gate task read the three files on the Volume with DuckDB 1.1.3 and recorded 17 Green Taxi checks, 0 failed. In both the `source` and `bronze` layers, `data_quality_results` shows `dropoff_before_pickup` `WARN` with 1 row, `zero_length_trip` `INFO` with 99 rows, and no `dropoff_after_pickup`. `gate_status` is `PASS` for every layer, and Bronze still holds 133,367 rows.
+
 **Rejected alternatives:**
 
 - **Report the whole dropoff check as INFO.** It would never block, so a delivery with reversed timestamps would load without a signal.
