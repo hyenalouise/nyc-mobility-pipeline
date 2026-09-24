@@ -310,7 +310,7 @@ SELECT
     (SELECT MAX(batch_id) FROM base),
     (SELECT MAX(source_file_version) FROM base),
     code_revision,
-    'TODO',
+    'Hazelle Cuevas',
     NULL,
     details
 FROM checks;
