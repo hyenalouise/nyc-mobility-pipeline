@@ -347,7 +347,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    'Crystal Manas',
     NULL,
     details
 FROM checks;
