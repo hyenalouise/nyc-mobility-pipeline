@@ -10,7 +10,7 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 |---|---|
 | Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
 | Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
-| Compute | One SQL warehouse, `${var.warehouse_id}`, for all 30 tasks (28 SQL file tasks, 2 dashboard tasks). No clusters |
+| Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
 | Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25) |
 | Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
 | Notifications | None yet. Alerting on failure is #131 |
@@ -24,10 +24,12 @@ Dependencies are what enforce the gates: if a validation task fails, everything 
 | Task key | Type | File | Depends on |
 |---|---|---|---|
 | `control_setup` | SQL file | `etl/01_control/00_create_control_tables.sql` | — |
+| `gate_source_green_taxi` | Python file, serverless | `src/ingestion/source_gate.py --source green_taxi` | `control_setup` |
+| `gate_source_taxi_zones` | Python file, serverless | `src/ingestion/source_gate.py --source taxi_zones` | `control_setup` |
 | `gate_control` | SQL file | `etl/01_control/90_validate_control.sql` | the three load tasks |
-| `load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `control_setup` |
+| `load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `gate_source_green_taxi` |
 | `load_open_meteo` | SQL file | `etl/02_bronze/20_load_open_meteo.sql` | `control_setup` |
-| `load_taxi_zones` | SQL file | `etl/02_bronze/30_load_taxi_zones.sql` | `control_setup` |
+| `load_taxi_zones` | SQL file | `etl/02_bronze/30_load_taxi_zones.sql` | `gate_source_taxi_zones` |
 | `gate_bronze_green_taxi` | SQL file | `etl/02_bronze/90_validate_green_taxi.sql` | `load_green_taxi` |
 | `gate_bronze_open_meteo` | SQL file | `etl/02_bronze/90_validate_open_meteo_weather.sql` | `load_open_meteo` |
 | `gate_bronze_taxi_zones` | SQL file | `etl/02_bronze/90_validate_taxi_zones.sql` | `load_taxi_zones` |
@@ -53,6 +55,12 @@ Dependencies are what enforce the gates: if a validation task fails, everything 
 | `gate_analytics` | SQL file | `etl/06_analytics/90_validate_analytics.sql` | the three analytics tasks |
 
 Dashboards read validated Analytics results and are not job tasks.
+
+## Source gates before Bronze (#148)
+
+Green Taxi and Taxi Zones are checked before they are loaded. Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17). Open-Meteo has no gate until it has a contract (#125).
+
+The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
 
 ## What makes a gate real
 
