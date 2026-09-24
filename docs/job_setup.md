@@ -4,13 +4,19 @@ How to wire the pipeline as one multi-task Databricks **Job**. A job is used rat
 
 ## Job settings
 
+These values come from `databricks.yml`. If the two disagree, `databricks.yml` is right.
+
 | Setting | Value |
 |---|---|
-| Name | `nyc-mobility-pipeline` |
-| Source | Git provider, this repository, branch `main` |
-| Compute | One shared job cluster for the run, or serverless. SQL file tasks also need a SQL warehouse. |
-| Parameters | `landing_path` (defaults to the Volume path), `reprocess` (`false`) |
-| Notifications | Email on failure, sent to the whole team (see below) |
+
+| Setting | Value |
+|---|---|
+| Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
+| Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
+| Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
+| Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25) |
+| Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
+| Notifications | Email on failure. In `dev`, only the person who deployed it (`${workspace.current_user.userName}`); in `prod`, the whole team, since that's a shared pipeline (#131) |
 
 Using the Git provider rather than a personal Git folder means every run uses reviewed code and records the commit it ran.
 
@@ -21,10 +27,12 @@ Dependencies are what enforce the gates: if a validation task fails, everything 
 | Task key | Type | File | Depends on |
 |---|---|---|---|
 | `control_setup` | SQL file | `etl/01_control/00_create_control_tables.sql` | — |
+| `gate_source_green_taxi` | Python file, serverless | `src/ingestion/source_gate.py --source green_taxi` | `control_setup` |
+| `gate_source_taxi_zones` | Python file, serverless | `src/ingestion/source_gate.py --source taxi_zones` | `control_setup` |
 | `gate_control` | SQL file | `etl/01_control/90_validate_control.sql` | the three load tasks |
-| `load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `control_setup` |
+| `load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `gate_source_green_taxi` |
 | `load_open_meteo` | SQL file | `etl/02_bronze/20_load_open_meteo.sql` | `control_setup` |
-| `load_taxi_zones` | SQL file | `etl/02_bronze/30_load_taxi_zones.sql` | `control_setup` |
+| `load_taxi_zones` | SQL file | `etl/02_bronze/30_load_taxi_zones.sql` | `gate_source_taxi_zones` |
 | `gate_bronze_green_taxi` | SQL file | `etl/02_bronze/90_validate_green_taxi.sql` | `load_green_taxi` |
 | `gate_bronze_open_meteo` | SQL file | `etl/02_bronze/90_validate_open_meteo_weather.sql` | `load_open_meteo` |
 | `gate_bronze_taxi_zones` | SQL file | `etl/02_bronze/90_validate_taxi_zones.sql` | `load_taxi_zones` |
@@ -49,7 +57,49 @@ Dependencies are what enforce the gates: if a validation task fails, everything 
 | `analytics_zones` | SQL file | `etl/06_analytics/30_mobility_patterns_by_zone.sql` | `gate_gold` |
 | `gate_analytics` | SQL file | `etl/06_analytics/90_validate_analytics.sql` | the three analytics tasks |
 
-Dashboards read validated Analytics results and are not job tasks.
+## Dashboards
+
+Dashboards are job tasks like everything above, added after the tasks that
+produce the data they read. Both are bundle-owned resources
+(`resources.dashboards` in `databricks.yml`) rather than hardcoded dashboard
+ids: each entry points at a `.lvdash.json` file under `dashboards/`, and the
+job's `dashboard_task` entries reference the resource by id. A deploy into a
+workspace that has never held these dashboards creates them there, instead
+of failing on an id that only exists in the workspace they were originally
+built in (#122).
+
+| Task key | Dashboard | Source file | Depends on |
+|---|---|---|---|
+| `dq_dashboard` | NYC Mobility Data Quality Dashboard | `dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json` | every validation gate task |
+| `nyc_mobility_analytics` | NYC Mobility Analytics Dashboard | `dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json` | `gate_analytics` |
+
+`dq_dashboard` runs regardless of whether upstream tasks passed or failed
+(`run_if: ALL_DONE`), so a failing pipeline still gets a refreshed data
+quality view showing what failed. `nyc_mobility_analytics` only runs after
+the analytics gate passes, since it presents validated business answers and
+has nothing meaningful to show otherwise.
+
+## Source gates before Bronze (#148)
+
+Green Taxi and Taxi Zones are checked before they are loaded. Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17). Open-Meteo has no gate until it has a contract (#125).
+
+Each loader waits only for its own source's gate, so a BLOCKED Green Taxi delivery stops Green Taxi and nothing else. Task names are the task keys in `databricks.yml`:
+
+```mermaid
+flowchart LR
+    control["00_create_control_tables"]
+    gate_gt["05_source_gate_green_taxi"]
+    gate_tz["05_source_gate_taxi_zones"]
+    load_gt["10_load_green_taxi"]
+    load_tz["30_load_taxi_zones"]
+    load_wx["20_load_open_meteo<br/>(no gate yet)"]
+
+    control --> gate_gt --> load_gt
+    control --> gate_tz --> load_tz
+    control --> load_wx
+```
+
+The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
 
 ## What makes a gate real
 

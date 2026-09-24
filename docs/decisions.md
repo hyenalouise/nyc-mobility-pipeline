@@ -2,7 +2,7 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-24
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
 ## Maintenance rule
@@ -48,6 +48,8 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
+| D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
+| D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Approved through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
 
 
 ## Foundational decisions
@@ -941,3 +943,167 @@ different code and nothing says which.
 - The recorded revision is the **deployed** commit, not the latest commit on the
   branch. Picking up new code requires a deploy, which is the point of a
   controlled deployment rather than a limitation of it.
+
+
+## Scheduling decision
+
+### D27: A weekly schedule, Monday 06:00 New York time
+
+**Status:** Approved
+**Decision date:** 2026-09-23
+
+**Decision:**
+
+The job runs on a time-based schedule, weekly on Monday at 06:00
+`America/New_York`, declared in `databricks.yml`:
+
+    schedule:
+      quartz_cron_expression: "0 0 6 ? * MON"
+      timezone_id: America/New_York
+
+The schedule sets no `pause_status`. The target decides: `dev` deploys it paused
+and `prod` deploys it running.
+
+**Reason:**
+
+Every run so far was started by hand, so "how does it run tomorrow" had no
+answer, and freshness had no expected interval to be measured against.
+
+Green Taxi arrives monthly. A daily run would find nothing new on almost every
+day, and each one still costs a full pipeline run of about five and a half
+minutes of warehouse time, even though files already loaded are skipped by
+content hash. Weekly bounds how long a newly landed file waits to one week, and
+gives freshness a definition: no successful run in 8 days means the data is
+stale.
+
+**Verified with `databricks bundle validate`, 2026-09-23:**
+
+- With no `pause_status` on the job, `dev` resolves the schedule to `PAUSED` and
+  `prod` to `UNPAUSED`.
+- With `pause_status: UNPAUSED` set on the job, `dev` also resolves to
+  `UNPAUSED`. An explicit value overrides development mode, so every sandbox
+  would run on the timer. `tests/test_bundle_contract.py` fails if one is added.
+- Those validate runs also reported an error for `prod` that the resolved
+  values above do not show: production mode requires `workspace.root_path`, and
+  the `prod` target had never set one, so it could not deploy at all. Added on
+  2026-09-24 as one fixed folder under `/Workspace/Shared` (per-user folders
+  would let a second deploy create a duplicate prod job). `prod` now validates
+  with one warning, that the folder is writable by all workspace users, which
+  is accepted so any of us can redeploy.
+
+**Verified on the deployed dev job, 2026-09-23:**
+
+Deployed from `f5ae6e8` with `databricks bundle deploy --target dev`. On
+`[dev ina_magno] NYC Mobility Pipeline` (job `224133189973974`),
+`databricks jobs get` then showed:
+
+    schedule: pause_status PAUSED, quartz_cron_expression "0 0 6 ? * MON",
+              timezone_id America/New_York
+    git_commit and code_revision default: f5ae6e82002168d949c2efa1d1501711cc8746d4
+
+No run was started by the deploy; the latest run was still the one from before
+it.
+
+**Rejected alternatives:**
+
+- **A file arrival trigger.** The more accurate trigger for a monthly source,
+  since the job would run when a file lands rather than on a guess. Rejected for
+  now: files reach the Volume by hand upload rather than from a feed, so it would
+  fire on a person's upload anyway, and it has not been tried on this workspace.
+  Worth revisiting if delivery is automated.
+- **Daily.** Picks up a new file within a day, at the cost of about thirty runs a
+  month, nearly all of which find nothing new.
+- **Monthly.** Matches the source's cadence, but a file that lands the day after a
+  run waits almost a month.
+
+**Consequences:**
+
+- Nothing fires in `dev`. The schedule only produces runs once the bundle is
+  deployed to `prod`, which has not been done yet. `prod` now validates, but
+  going live waits on #122, so the first scheduled runs are not all failures.
+- Until #122 is fixed, every run ends `FAILED` on the dashboard tasks. A running
+  schedule would report a failure every week, and failure alerting (#131) would
+  fire each time.
+- Freshness monitoring (#119, #131) can use 8 days as its staleness threshold.
+- 06:00 is New York local time, so the run moves by an hour in UTC terms when
+  daylight saving changes. The local time stays the same.
+
+## Source gate decision
+
+### D28: Negative fares are reported by the source gate, not blocked
+
+**Status:** Approved through Issue #147
+**Decision date:** 2026-09-24
+
+**Decision:**
+
+`fare_amount_non_negative` in `src/ingestion/source_gate.py` has severity
+`INFO` and no threshold. The gate still counts negative fares and records the
+count in its evidence, but a delivery is never refused because of them.
+
+**Reason:**
+
+The check was `WARN` with a 0.1% threshold. On the March–May 2026 source files
+the gate found 384 negative fares out of 133,367 rows, 0.288% (111 in March,
+153 in April, 120 in May), so the check failed and the gate returned
+`BLOCKED`, exit 1. That was the delivery Bronze had already loaded and
+reconciled to the cent.
+
+The rest of the pipeline accepts those rows on purpose:
+
+- D15 keeps negative fares in `green_taxi_clean`, tagged with
+  `negative_fare_flag`, and rejects quarantining them.
+- `etl/02_bronze/90_validate_green_taxi.sql` reports the same count as
+  `negative_fare_amount`, severity `INFO`.
+
+A pre-ingestion gate that refuses what every later layer is designed to keep
+would stop the scheduled run (D27) for no data-quality benefit. The gate
+exists to stop deliveries the pipeline cannot use, not to restate Silver's
+flags as refusals.
+
+The committed evidence did not show the problem. `results.json` was generated
+before the fare check was added, ran 15 checks, and listed `https://` inputs
+that the current code refuses with exit 2.
+
+**Verified 2026-09-24**, with DuckDB 1.1.3 as pinned in `requirements-dev.txt`,
+against local copies of the three files whose SHA-256 checksums match the
+Volume:
+
+- Before: `fare_amount_non_negative` FAIL, 384 rows; gate `BLOCKED`, exit 1.
+- After: `fare_amount_non_negative` INFO, 384 rows; gate `ACCEPTED`, exit 0,
+  16 checks.
+
+**Rejected alternatives:**
+
+- **Raise the threshold until the files pass.** `data_quality_results`
+  defines `threshold_pct` as a documented tolerance, not one tuned to today's
+  data. A number picked to make 0.288% pass would block again on a month
+  with slightly more refunds, and still contradict D15.
+- **Keep blocking, and quarantine negative fares in Silver.** Rejected by
+  D15: a negative fare still has a valid pickup, dropoff and zone for
+  trip-count measures.
+
+**Open for review:**
+
+Three other gate checks cover conditions D15 also keeps and flags in Silver,
+and were left unchanged here:
+
+- `trip_distance_non_negative`: `BLOCK`, 0 rows today. D15 keeps negative
+  distances with `negative_distance_flag`. CI's bad-delivery case relies on it
+  blocking.
+- `dropoff_after_pickup`: `WARN` at 0.1%, currently 0.075%. It counts
+  zero-length trips as well as dropoff before pickup, so it is not the same
+  condition as `dropoff_before_pickup_flag`.
+- `passenger_count_gt_8`: `WARN` at 0.1%, currently 0.0097%.
+
+Whether they follow the same rule is a separate decision, tracked in #153 together with a wording fix in `docs/validation.md`, which calls INFO checks "measurements with a tolerance" although every INFO check records `threshold_pct` as NULL.
+
+**Consequences:**
+
+- `evidence/proof/source-validation/results.json` must be regenerated from
+  the current code against the Volume paths.
+- `docs/duckdb/validation_checks.md` and `docs/duckdb/evidence.md` are updated
+  in the same pull request.
+- `evidence/proof/2026-09-23-bronze-duckdb-reconciliation.md` still records
+  the 15-check run of Issue #115. It is left unchanged as a record of that run.
+- Issue #148, which runs the gate as a job task, is unblocked by this.

@@ -1,12 +1,24 @@
 import argparse
+import inspect
 import json
 import sys
+import uuid
 from pathlib import Path
 
 import duckdb
 
 
-CONTRACT_PATH = Path("config/source_contract.json")
+# Resolved from this file, not from the working directory. As a job task the
+# script runs from a Git checkout whose working directory is not guaranteed
+# to be the repository root, so a relative path could miss the contract.
+#
+# Databricks runs a job's Python file with exec(compile(source, path,
+# "exec")), which defines no __file__ (run 329476320889065 failed on it).
+# The compiled code still carries the path it was compiled from.
+REPO_ROOT = Path(inspect.currentframe().f_code.co_filename).resolve().parents[2]
+
+CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
+EVIDENCE_DIR = REPO_ROOT / "evidence" / "proof" / "source-validation"
 
 # Green Taxi keeps its original, already-committed filename (results.json,
 # referenced by docs/duckdb/evidence.md) so this fix stays backward
@@ -14,14 +26,14 @@ CONTRACT_PATH = Path("config/source_contract.json")
 # of sharing that path -- which is what let a taxi_zones run silently
 # overwrite Green Taxi's committed evidence before this fix.
 DEFAULT_EVIDENCE_PATHS = {
-    "green_taxi": Path("evidence/proof/source-validation/results.json"),
+    "green_taxi": EVIDENCE_DIR / "results.json",
 }
 
 
 def default_evidence_path(source):
     return DEFAULT_EVIDENCE_PATHS.get(
         source,
-        Path(f"evidence/proof/source-validation/{source}_results.json"),
+        EVIDENCE_DIR / f"{source}_results.json",
     )
 
 # Local view name each source is loaded into. Kept separate per source so a
@@ -339,7 +351,10 @@ def run_green_taxi_checks(connection, contract):
         )
     )
 
-    # 7b. Fare amount nonnegative
+    # 7b. Fare amount nonnegative -- INFO, never blocking (D28). Negative fares
+    # are a known source trait that Silver retains and flags (D15), and the
+    # Bronze SQL gate reports the same count as INFO. A threshold here would
+    # refuse a delivery the rest of the pipeline accepts.
     negative_fare_amount = scalar(
         connection,
         f"""
@@ -353,13 +368,13 @@ def run_green_taxi_checks(connection, contract):
         create_result(
             check_name="fare_amount_non_negative",
             check_type="RANGE",
-            severity="WARN",
+            severity="INFO",
             fail_count=negative_fare_amount,
             total_count=total_rows,
-            threshold_pct=0.1,
+            threshold_pct=None,
             details=(
-                "Negative fare amounts are flagged. "
-                "A maximum failure rate of 0.1% is tolerated."
+                "Negative fares are a known source trait: retained "
+                "and flagged in Silver (D15). Counted, never blocking."
             ),
         )
     )
@@ -909,6 +924,126 @@ def write_evidence(
     )
 
 
+# --- Recording in 01-control (#148) -----------------------------------------
+#
+# As a job task the gate also writes one row per check to
+# data_quality_results, the table every SQL gate writes to, so a
+# pre-ingestion verdict appears in gate_status and on the DQ dashboard next
+# to the Bronze and Silver gates. Locally and in CI nothing is recorded:
+# there is no Spark session there, and the JSON evidence is the record.
+
+DQ_TABLE = "`ftw-week-08`.`01-control`.data_quality_results"
+CONTROL_LAYER = "source"
+UNSET_REVISION = "UNSET"
+
+# The gate calls its blocking severity BLOCK. data_quality_results and the
+# dq_status() function in 01-control call the same thing FAIL.
+CONTROL_SEVERITY = {
+    "BLOCK": "FAIL",
+    "WARN": "WARN",
+    "INFO": "INFO",
+}
+
+# data_quality_results' columns in table order, without executed_at, which
+# the INSERT sets with current_timestamp() the same way the SQL gates do.
+CONTROL_COLUMNS = (
+    "run_id",
+    "layer",
+    "dataset",
+    "check_name",
+    "check_type",
+    "severity",
+    "status",
+    "fail_count",
+    "total_count",
+    "fail_pct",
+    "threshold_pct",
+    "batch_id",
+    "source_version_id",
+    "code_revision",
+    "owner",
+    "evidence_location",
+    "details",
+)
+
+
+def control_rows(source, inputs, results, run_id, code_revision):
+    """One data_quality_results row per check, in CONTROL_COLUMNS order.
+
+    batch_id and source_version_id stay NULL: the gate runs before Bronze
+    has created a batch or a version to point at. evidence_location records
+    the input paths the gate read instead.
+    """
+    revision = code_revision or UNSET_REVISION
+    evidence_location = ", ".join(inputs)
+
+    return [
+        (
+            run_id,
+            CONTROL_LAYER,
+            source,
+            result["check_name"],
+            result["check_type"],
+            CONTROL_SEVERITY[result["severity"]],
+            result["status"],
+            result["fail_count"],
+            result["total_count"],
+            float(result["fail_pct"]),
+            (
+                None
+                if result["threshold_pct"] is None
+                else float(result["threshold_pct"])
+            ),
+            None,
+            None,
+            revision,
+            # The same placeholder the SQL gates write until #126 names
+            # an owner per check.
+            "TODO",
+            evidence_location,
+            result["details"],
+        )
+        for result in results
+    ]
+
+
+def record_in_control(rows):
+    """Append rows to data_quality_results. Needs Databricks' Spark session."""
+    from pyspark.sql import SparkSession
+    from pyspark.sql.types import (
+        DoubleType,
+        LongType,
+        StringType,
+        StructField,
+        StructType,
+    )
+
+    numeric_types = {
+        "fail_count": LongType(),
+        "total_count": LongType(),
+        "fail_pct": DoubleType(),
+        "threshold_pct": DoubleType(),
+    }
+    schema = StructType([
+        StructField(column, numeric_types.get(column, StringType()), True)
+        for column in CONTROL_COLUMNS
+    ])
+
+    spark = SparkSession.builder.getOrCreate()
+    spark.createDataFrame(rows, schema).createOrReplaceTempView(
+        "source_gate_results"
+    )
+
+    columns = ", ".join(CONTROL_COLUMNS)
+    spark.sql(
+        f"""
+        INSERT INTO {DQ_TABLE} (executed_at, {columns})
+        SELECT current_timestamp(), {columns}
+        FROM source_gate_results
+        """
+    )
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
@@ -941,6 +1076,24 @@ def parse_arguments():
             "Path for generated JSON evidence. Defaults to a path specific "
             "to --source, so different sources never share, and silently "
             "overwrite, one evidence file."
+        ),
+    )
+
+    parser.add_argument(
+        "--record-control",
+        action="store_true",
+        help=(
+            "Also append one row per check to data_quality_results. "
+            "For the Databricks job task; needs a Spark session."
+        ),
+    )
+
+    parser.add_argument(
+        "--code-revision",
+        default="",
+        help=(
+            "Commit recorded on the control rows. The job passes its "
+            "code_revision parameter; empty records 'UNSET' (D25)."
         ),
     )
 
@@ -1042,10 +1195,30 @@ def main():
 
     print(f"Evidence: {evidence_path}")
 
+    # Recorded before returning, so a BLOCKED delivery is on record too.
+    if args.record_control:
+        rows = control_rows(
+            source=args.source,
+            inputs=inputs,
+            results=results,
+            run_id=str(uuid.uuid4()),
+            code_revision=args.code_revision,
+        )
+        record_in_control(rows)
+        print(f"Recorded {len(rows)} rows in {DQ_TABLE}")
+
     connection.close()
 
     return exit_code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+
+    # Exit only to signal a failure. Databricks runs a job's Python file
+    # inside IPython, which reports even SystemExit(0) as a failed task (run
+    # 159238056445742 failed two ACCEPTED gates that way). Returning normally
+    # is success everywhere, and a non-zero code still fails the task and
+    # sets the process exit status that CI checks.
+    if exit_code != EXIT_ACCEPTED:
+        sys.exit(exit_code)
