@@ -28,7 +28,11 @@ def job_tasks():
         if "sql_task" in task:
             file = task["sql_task"]["file"]["path"]
         else:
-            file = task["spark_python_task"]["python_file"]
+            # A source gate is one file run per source, so the row is only
+            # right if it names the source too.
+            python_task = task["spark_python_task"]
+            source = python_task["parameters"][python_task["parameters"].index("--source") + 1]
+            file = f"{python_task['python_file']} --source {source}"
         deps = sorted(d["task_key"] for d in task.get("depends_on", []))
         result[task["task_key"]] = (deps, file)
     return result
@@ -43,7 +47,7 @@ def doc_rows(text):
             continue
         cells = [cell.strip() for cell in line.strip("|").split("|")]
         key = cells[0].strip("`")
-        file = re.findall(r"`([^`\s]+)", cells[2])[0]
+        file = re.findall(r"`([^`]+)`", cells[2])[0]
         deps = sorted(re.findall(r"`([^`]+)`", cells[3]))
         rows[key] = (deps, file)
     return rows
@@ -103,6 +107,8 @@ def test_the_rules_would_catch_their_regressions():
     assert "control_setup" not in job_tasks()
     drifted = "\n## Tasks\n\n| `10_load_green_taxi` | SQL file | `etl/02_bronze/10_load_green_taxi.sql` | `00_create_control_tables` |\n"
     assert doc_rows(drifted)["10_load_green_taxi"] != job_tasks()["10_load_green_taxi"]
+    wrong_source = "\n## Tasks\n\n| `05_source_gate_weather` | Python file, serverless | `src/ingestion/source_gate.py --source taxi_zones` | `00_create_control_tables` |\n"
+    assert doc_rows(wrong_source)["05_source_gate_weather"] != job_tasks()["05_source_gate_weather"]
 
 
 def test_the_dashboards_table_names_real_tasks_and_dependencies():
