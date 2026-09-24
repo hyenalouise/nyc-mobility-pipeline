@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import json
 import sys
 import uuid
@@ -10,7 +11,11 @@ import duckdb
 # Resolved from this file, not from the working directory. As a job task the
 # script runs from a Git checkout whose working directory is not guaranteed
 # to be the repository root, so a relative path could miss the contract.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+#
+# Databricks runs a job's Python file with exec(compile(source, path,
+# "exec")), which defines no __file__ (run 329476320889065 failed on it).
+# The compiled code still carries the path it was compiled from.
+REPO_ROOT = Path(inspect.currentframe().f_code.co_filename).resolve().parents[2]
 
 CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
 EVIDENCE_DIR = REPO_ROOT / "evidence" / "proof" / "source-validation"

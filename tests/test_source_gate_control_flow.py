@@ -194,3 +194,18 @@ def test_nothing_is_recorded_without_the_flag(tmp_path, monkeypatch):
 
     assert exit_code == source_gate.EXIT_ACCEPTED
     assert recorded == []
+
+
+def test_the_gate_runs_the_way_a_databricks_job_runs_it(tmp_path, monkeypatch):
+    # A job's Python file is run with exec(compile(source, path, "exec")), so
+    # __file__ is not defined (#148, run 329476320889065). The gate must
+    # still find the repository root and its contract.
+    script = Path(source_gate.__file__)
+    namespace = {"__name__": "databricks_job_task"}
+
+    monkeypatch.chdir(tmp_path)
+    exec(compile(script.read_bytes(), str(script), "exec"), namespace)
+
+    assert "__file__" not in namespace
+    assert namespace["REPO_ROOT"] == REPO_ROOT
+    assert namespace["CONTRACT_PATH"].is_file()
