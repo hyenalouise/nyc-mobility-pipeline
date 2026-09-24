@@ -49,7 +49,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
 | D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
-| D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Proposed through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
+| D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Approved through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
 
 
 ## Foundational decisions
@@ -1032,7 +1032,7 @@ it.
 
 ### D28: Negative fares are reported by the source gate, not blocked
 
-**Status:** Proposed through Issue #147
+**Status:** Approved through Issue #147
 **Decision date:** 2026-09-24
 
 **Decision:**
@@ -1096,7 +1096,7 @@ and were left unchanged here:
   condition as `dropoff_before_pickup_flag`.
 - `passenger_count_gt_8`: `WARN` at 0.1%, currently 0.0097%.
 
-Whether they follow the same rule is a separate decision.
+Whether they follow the same rule is a separate decision, tracked in #153 together with a wording fix in `docs/validation.md`, which calls INFO checks "measurements with a tolerance" although every INFO check records `threshold_pct` as NULL.
 
 **Consequences:**
 
