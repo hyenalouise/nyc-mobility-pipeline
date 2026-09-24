@@ -211,12 +211,12 @@ checks AS (
     -- ---- tolerances: rare anomalies that should stay rare ----
 
     UNION ALL
-    SELECT 'dropoff_after_pickup', 'CONSISTENCY', 'WARN', 0.1,
+    SELECT 'dropoff_before_pickup', 'CONSISTENCY', 'WARN', 0.1,
            SUM(CASE WHEN lpep_pickup_datetime IS NOT NULL
                       AND lpep_dropoff_datetime IS NOT NULL
-                      AND lpep_dropoff_datetime <= lpep_pickup_datetime
+                      AND lpep_dropoff_datetime < lpep_pickup_datetime
                     THEN 1 ELSE 0 END), COUNT(*),
-           'Dropoff should be later than pickup. Retained for Silver handling.'
+           'Dropoff should not be before pickup. Same condition as Silver''s dropoff_before_pickup_flag (D29).'
     FROM `ftw-week-08`.`02-bronze`.green_taxi_raw
 
     UNION ALL
@@ -277,6 +277,15 @@ checks AS (
     FROM duplicate_rows
 
     -- ---- known source traits: measured every run, never blocking ----
+
+    UNION ALL
+    SELECT 'zero_length_trip', 'MEASURE', 'INFO', NULL,
+           SUM(CASE WHEN lpep_pickup_datetime IS NOT NULL
+                      AND lpep_dropoff_datetime IS NOT NULL
+                      AND lpep_dropoff_datetime = lpep_pickup_datetime
+                    THEN 1 ELSE 0 END), COUNT(*),
+           'Dropoff at the same instant as pickup. Retained, flagged in Silver as implausible_duration_flag (D15, D29).'
+    FROM `ftw-week-08`.`02-bronze`.green_taxi_raw
 
     UNION ALL
     SELECT 'passenger_count_zero', 'MEASURE', 'INFO', NULL,
