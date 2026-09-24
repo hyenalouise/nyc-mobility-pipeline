@@ -112,6 +112,63 @@ Two separate hashes are recorded, deliberately different:
 
 Rerun behavior: re-running against the same response is a no-op on the business key — no duplicate rows.
 
+Pre-Bronze source validation:
+
+Before Bronze ingestion runs, `src/ingestion/source_gate.py --source weather`
+validates the landed JSON response locally with DuckDB — no Databricks
+credentials, no network access. This mirrors the Green Taxi and Taxi Zones
+gates (#115, #124), extended to the third source per #125.
+
+Weather is a request-window source, not a fixed file, so its contract has no
+`row_count_floor`. Instead it records a `requested_window` (2026-03-01 to
+2026-05-31), pinned by a test to the `weather_requested_*` variables in
+`20_load_open_meteo.sql`. Completeness is checked two ways:
+`hourly_series_has_no_gaps` compares the row count to the span between the
+response's own first and last hour, which catches a hole in the middle, and
+`hourly_series_covers_requested_window` checks the count equals the requested
+days × 24 (the same rule as Bronze's `hourly_volume`) and that the first and
+last hour are the window's start 00:00 and end 23:00, which catches a file cut
+short at either end.
+
+Checks performed: source readable, at least one response landed, required
+top-level fields present (`latitude`, `longitude`, `elevation`, `hourly`),
+`hourly`'s own four fields present (`time`, `temperature_2m`, `precipitation`,
+`weather_code`), hourly series not empty, `hourly.time` present and
+parseable, `temperature_2m`/`precipitation`/`weather_code` not null, no
+duplicate `hourly.time` values, `hourly_series_has_no_gaps`,
+`hourly_series_covers_requested_window`, `temperature_2m` within -50–60°C,
+`precipitation` non-negative, and `weather_code` against the full WMO code
+set. The window, range, non-negative, and WMO checks all block at 0%,
+matching the Bronze and Silver weather gates, which fail on the same
+conditions; tolerating them here would only defer the block to Bronze.
+
+A field entirely absent from the JSON (not merely null) is checked for by
+name rather than referenced directly, so a response missing e.g. `elevation`
+or `hourly.precipitation` is reported as a named `required_columns` /
+`required_hourly_fields` failure instead of crashing the gate — see
+`src/ingestion/source_gate.py`'s `create_weather_view` for why this needed
+different handling than Green Taxi/Taxi Zones' `SELECT *`.
+
+A clean file is `ACCEPTED` (exit code 0); a file failing any check is
+`BLOCKED` (exit code 1) and Bronze must not proceed. As with the other two
+sources, this validator is stateless and has no run history of its own: what
+it proves is that one landed response is internally well-formed and contains
+no duplicate hours, not that a rerun against Bronze produces no duplicate
+rows — that guarantee is Bronze's own business key and `MERGE`, documented
+above.
+
+Both a clean response and each defect case (a missing hour, a response cut
+short at either end, a duplicated hour, a null or unparseable time, a null or
+out-of-range measurement, negative precipitation, an unknown or non-integer
+`weather_code`, a missing required or hourly field, a non-array hourly field,
+and an empty hourly series) are exercised in `tests/test_weather_gate.py`,
+which generates its own JSON fixtures rather than relying on a committed
+source file. The same file pins the gate's WMO codes and temperature range to
+the Bronze and Silver weather gates, and its `requested_window` to the Bronze
+loader.
+
+See `docs/duckdb/validation_checks.md` for the full check catalogue.
+
 ## Taxi Zones ingestion
 
 Source:
