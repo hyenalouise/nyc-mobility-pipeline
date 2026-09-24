@@ -73,7 +73,6 @@ resources:
         # and records one row per check in data_quality_results. A BLOCKED
         # delivery fails the task, so only that source's loader and what
         # follows it are skipped; the other sources carry on (D17).
-        # Open-Meteo has no contract yet, so no gate (#125).
         - task_key: 05_source_gate_green_taxi
           depends_on:
             - task_key: 00_create_control_tables
@@ -108,6 +107,25 @@ resources:
               - --record-control
               - --code-revision
               - "{{job.parameters.code_revision}}"
+        # Weather's gate (#125) reads the same landed response the Bronze
+        # loader reads (20_load_open_meteo.sql), not a local copy.
+        - task_key: 05_source_gate_weather
+          depends_on:
+            - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - weather
+              - --input
+              - /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
+              - --evidence
+              - /tmp/source_gate_weather.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
         - task_key: 10_load_green_taxi
           depends_on:
             - task_key: 05_source_gate_green_taxi
@@ -118,7 +136,7 @@ resources:
             warehouse_id: ${var.warehouse_id}
         - task_key: 20_load_open_meteo
           depends_on:
-            - task_key: 00_create_control_tables
+            - task_key: 05_source_gate_weather
           sql_task:
             file:
               path: etl/02_bronze/20_load_open_meteo.sql
@@ -349,6 +367,7 @@ resources:
             - task_key: 90_validate_clean_taxi_zones
             - task_key: 05_source_gate_green_taxi
             - task_key: 05_source_gate_taxi_zones
+            - task_key: 05_source_gate_weather
           run_if: ALL_DONE
           dashboard_task:
             subscription: {}
@@ -361,7 +380,7 @@ resources:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
             dashboard_id: ${resources.dashboards.analytics_dashboard.id}
-      # Serverless job compute for the two Python source gates. The SQL
+      # Serverless job compute for the three Python source gates. The SQL
       # warehouse runs SQL only. duckdb is pinned to the version in
       # requirements-dev.txt, so the job runs the same engine as CI and the
       # committed evidence; tests/test_bundle_contract.py fails if they drift.
