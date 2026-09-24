@@ -80,6 +80,22 @@ has nothing meaningful to show otherwise.
 
 Green Taxi and Taxi Zones are checked before they are loaded. Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17). Open-Meteo has no gate until it has a contract (#125).
 
+Each loader waits only for its own source's gate, so a BLOCKED Green Taxi delivery stops Green Taxi and nothing else. Task names are the task keys in `databricks.yml`:
+
+```mermaid
+flowchart LR
+    control["00_create_control_tables"]
+    gate_gt["05_source_gate_green_taxi"]
+    gate_tz["05_source_gate_taxi_zones"]
+    load_gt["10_load_green_taxi"]
+    load_tz["30_load_taxi_zones"]
+    load_wx["20_load_open_meteo<br/>(no gate yet)"]
+
+    control --> gate_gt --> load_gt
+    control --> gate_tz --> load_tz
+    control --> load_wx
+```
+
 The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
 
 ## What makes a gate real
