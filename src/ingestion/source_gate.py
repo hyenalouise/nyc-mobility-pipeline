@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import uuid
 from pathlib import Path
 
 import duckdb
@@ -918,6 +919,126 @@ def write_evidence(
     )
 
 
+# --- Recording in 01-control (#148) -----------------------------------------
+#
+# As a job task the gate also writes one row per check to
+# data_quality_results, the table every SQL gate writes to, so a
+# pre-ingestion verdict appears in gate_status and on the DQ dashboard next
+# to the Bronze and Silver gates. Locally and in CI nothing is recorded:
+# there is no Spark session there, and the JSON evidence is the record.
+
+DQ_TABLE = "`ftw-week-08`.`01-control`.data_quality_results"
+CONTROL_LAYER = "source"
+UNSET_REVISION = "UNSET"
+
+# The gate calls its blocking severity BLOCK. data_quality_results and the
+# dq_status() function in 01-control call the same thing FAIL.
+CONTROL_SEVERITY = {
+    "BLOCK": "FAIL",
+    "WARN": "WARN",
+    "INFO": "INFO",
+}
+
+# data_quality_results' columns in table order, without executed_at, which
+# the INSERT sets with current_timestamp() the same way the SQL gates do.
+CONTROL_COLUMNS = (
+    "run_id",
+    "layer",
+    "dataset",
+    "check_name",
+    "check_type",
+    "severity",
+    "status",
+    "fail_count",
+    "total_count",
+    "fail_pct",
+    "threshold_pct",
+    "batch_id",
+    "source_version_id",
+    "code_revision",
+    "owner",
+    "evidence_location",
+    "details",
+)
+
+
+def control_rows(source, inputs, results, run_id, code_revision):
+    """One data_quality_results row per check, in CONTROL_COLUMNS order.
+
+    batch_id and source_version_id stay NULL: the gate runs before Bronze
+    has created a batch or a version to point at. evidence_location records
+    the input paths the gate read instead.
+    """
+    revision = code_revision or UNSET_REVISION
+    evidence_location = ", ".join(inputs)
+
+    return [
+        (
+            run_id,
+            CONTROL_LAYER,
+            source,
+            result["check_name"],
+            result["check_type"],
+            CONTROL_SEVERITY[result["severity"]],
+            result["status"],
+            result["fail_count"],
+            result["total_count"],
+            float(result["fail_pct"]),
+            (
+                None
+                if result["threshold_pct"] is None
+                else float(result["threshold_pct"])
+            ),
+            None,
+            None,
+            revision,
+            # The same placeholder the SQL gates write until #126 names
+            # an owner per check.
+            "TODO",
+            evidence_location,
+            result["details"],
+        )
+        for result in results
+    ]
+
+
+def record_in_control(rows):
+    """Append rows to data_quality_results. Needs Databricks' Spark session."""
+    from pyspark.sql import SparkSession
+    from pyspark.sql.types import (
+        DoubleType,
+        LongType,
+        StringType,
+        StructField,
+        StructType,
+    )
+
+    numeric_types = {
+        "fail_count": LongType(),
+        "total_count": LongType(),
+        "fail_pct": DoubleType(),
+        "threshold_pct": DoubleType(),
+    }
+    schema = StructType([
+        StructField(column, numeric_types.get(column, StringType()), True)
+        for column in CONTROL_COLUMNS
+    ])
+
+    spark = SparkSession.builder.getOrCreate()
+    spark.createDataFrame(rows, schema).createOrReplaceTempView(
+        "source_gate_results"
+    )
+
+    columns = ", ".join(CONTROL_COLUMNS)
+    spark.sql(
+        f"""
+        INSERT INTO {DQ_TABLE} (executed_at, {columns})
+        SELECT current_timestamp(), {columns}
+        FROM source_gate_results
+        """
+    )
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
@@ -950,6 +1071,24 @@ def parse_arguments():
             "Path for generated JSON evidence. Defaults to a path specific "
             "to --source, so different sources never share, and silently "
             "overwrite, one evidence file."
+        ),
+    )
+
+    parser.add_argument(
+        "--record-control",
+        action="store_true",
+        help=(
+            "Also append one row per check to data_quality_results. "
+            "For the Databricks job task; needs a Spark session."
+        ),
+    )
+
+    parser.add_argument(
+        "--code-revision",
+        default="",
+        help=(
+            "Commit recorded on the control rows. The job passes its "
+            "code_revision parameter; empty records 'UNSET' (D25)."
         ),
     )
 
@@ -1050,6 +1189,18 @@ def main():
     )
 
     print(f"Evidence: {evidence_path}")
+
+    # Recorded before returning, so a BLOCKED delivery is on record too.
+    if args.record_control:
+        rows = control_rows(
+            source=args.source,
+            inputs=inputs,
+            results=results,
+            run_id=str(uuid.uuid4()),
+            code_revision=args.code_revision,
+        )
+        record_in_control(rows)
+        print(f"Recorded {len(rows)} rows in {DQ_TABLE}")
 
     connection.close()
 
