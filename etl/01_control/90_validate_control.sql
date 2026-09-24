@@ -199,26 +199,14 @@ FROM checks;
 
 
 -- ------------------------------------------------------------
--- Gate result. Blocks Bronze when a blocking check failed.
--- ------------------------------------------------------------
-UPDATE `ftw-week-08`.`01-control`.pipeline_runs
-SET completed_at = current_timestamp(),
-    status = CASE
-                WHEN EXISTS (
-                    SELECT 1 FROM `ftw-week-08`.`01-control`.data_quality_results
-                    WHERE run_id = dq_run_id AND status = 'FAIL'
-                ) THEN 'FAILED' ELSE 'SUCCESS'
-             END
-WHERE run_id = dq_run_id;
-
-
--- ------------------------------------------------------------
 -- 8. Stuck runs. Mirrors check 4 (no_stuck_batches), but for pipeline_runs
 --    itself: a run still STARTED long after it began was abandoned by a
---    crash or a hung job, not something genuinely in progress. Excludes
---    this run's own row explicitly (run_id <> dq_run_id), so a run cannot
---    flag itself while still in progress, regardless of where this check
---    falls relative to the UPDATE above.
+--    crash or a hung job, not something genuinely in progress. Runs before
+--    the UPDATE below, so a stuck-run failure is reflected in this run's
+--    own recorded status rather than being written as SUCCESS and only
+--    caught by the final raise_error. Excludes this run's own row
+--    explicitly (run_id <> dq_run_id), since this run is itself still
+--    STARTED at this point and must not flag itself.
 -- ------------------------------------------------------------
 INSERT INTO `ftw-week-08`.`01-control`.data_quality_results
 SELECT
@@ -255,6 +243,20 @@ FROM (
         COUNT(*) AS total_count
     FROM `ftw-week-08`.`01-control`.pipeline_runs
 );
+
+
+-- ------------------------------------------------------------
+-- Gate result. Blocks Bronze when a blocking check failed.
+-- ------------------------------------------------------------
+UPDATE `ftw-week-08`.`01-control`.pipeline_runs
+SET completed_at = current_timestamp(),
+    status = CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM `ftw-week-08`.`01-control`.data_quality_results
+                    WHERE run_id = dq_run_id AND status = 'FAIL'
+                ) THEN 'FAILED' ELSE 'SUCCESS'
+             END
+WHERE run_id = dq_run_id;
 
 
 SELECT CASE
