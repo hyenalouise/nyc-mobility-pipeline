@@ -209,10 +209,11 @@ CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
 REQUIREMENTS_PATH = REPO_ROOT / "requirements-dev.txt"
 
 # The Bronze loader each gated source protects. A source added to the
-# contract (Open-Meteo, #125) has to be added here, or the test below fails.
+# contract has to be added here, or the test below fails.
 LOADERS = {
     "green_taxi": "etl/02_bronze/10_load_green_taxi.sql",
     "taxi_zones": "etl/02_bronze/30_load_taxi_zones.sql",
+    "weather": "etl/02_bronze/20_load_open_meteo.sql",
 }
 
 
