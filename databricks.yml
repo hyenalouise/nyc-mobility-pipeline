@@ -120,7 +120,7 @@ resources:
               - --source
               - weather
               - --input
-              - /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
+              - "{{job.parameters.weather_input}}"
               - --evidence
               - /tmp/source_gate_weather.json
               - --record-control
@@ -419,6 +419,8 @@ resources:
           default: /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
         - name: taxi_zones_input
           default: /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+        - name: weather_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
 
       # Pinned to a commit, not a branch, and deliberately.
       #
