@@ -274,7 +274,7 @@ SELECT
     (SELECT MAX(batch_id) FROM silver),
     (SELECT MAX(source_file_version) FROM silver),
     code_revision,
-    'TODO',
+    'Hazelle Cuevas',
     NULL,
     details
 FROM checks;
