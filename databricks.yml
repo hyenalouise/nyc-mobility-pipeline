@@ -59,9 +59,49 @@ resources:
               path: etl/01_control/00_create_control_tables.sql
               source: GIT
             warehouse_id: ${var.warehouse_id}
-        - task_key: 10_load_green_taxi
+        # Pre-ingestion source gates (#148). Each runs the DuckDB gate on its
+        # source's files in the Volume before that source's Bronze loader,
+        # and records one row per check in data_quality_results. A BLOCKED
+        # delivery fails the task, so only that source's loader and what
+        # follows it are skipped; the other sources carry on (D17).
+        # Open-Meteo has no contract yet, so no gate (#125).
+        - task_key: 05_source_gate_green_taxi
           depends_on:
             - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - green_taxi
+              - --input
+              - /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+              - --evidence
+              - /tmp/source_gate_green_taxi.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
+        - task_key: 05_source_gate_taxi_zones
+          depends_on:
+            - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - taxi_zones
+              - --input
+              - /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+              - --evidence
+              - /tmp/source_gate_taxi_zones.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
+        - task_key: 10_load_green_taxi
+          depends_on:
+            - task_key: 05_source_gate_green_taxi
           sql_task:
             file:
               path: etl/02_bronze/10_load_green_taxi.sql
@@ -77,7 +117,7 @@ resources:
             warehouse_id: ${var.warehouse_id}
         - task_key: 30_load_taxi_zones
           depends_on:
-            - task_key: 00_create_control_tables
+            - task_key: 05_source_gate_taxi_zones
           sql_task:
             file:
               path: etl/02_bronze/30_load_taxi_zones.sql
@@ -298,6 +338,8 @@ resources:
             - task_key: 90_validate_taxi_zones
             - task_key: 90_validate_control
             - task_key: 90_validate_clean_taxi_zones
+            - task_key: 05_source_gate_green_taxi
+            - task_key: 05_source_gate_taxi_zones
           run_if: ALL_DONE
           dashboard_task:
             subscription: {}
@@ -310,6 +352,17 @@ resources:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
             dashboard_id: 01f1b2d7cd3819ab9f69f54022737848
+      # Serverless job compute for the two Python source gates. The SQL
+      # warehouse runs SQL only. duckdb is pinned to the version in
+      # requirements-dev.txt, so the job runs the same engine as CI and the
+      # committed evidence; tests/test_bundle_contract.py fails if they drift.
+      environments:
+        - environment_key: source_gate
+          spec:
+            environment_version: "5"
+            dependencies:
+              - duckdb==1.1.3
+
       # Every gate reads :code_revision and stamps it on the rows it writes, so
       # a data-quality result can be traced to the code that produced it.
       #

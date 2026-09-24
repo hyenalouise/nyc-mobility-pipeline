@@ -6,8 +6,11 @@ changing the job by changing this file was never actually possible.
 
 These tests hold the shape in place, and guard the three per-workspace
 identifiers that were frozen into a file meant to be portable. Since #132 they
-also hold the schedule, which has two easy ways to go quietly wrong.
+also hold the schedule, which has two easy ways to go quietly wrong, and since
+#148 the source gates that must run before each Bronze loader.
 """
+import copy
+import json
 import re
 from pathlib import Path
 
@@ -197,3 +200,107 @@ def test_the_rules_would_catch_their_regressions():
     assert re.findall(pattern, "        warehouse_id: ${var.warehouse_id}\n") == []
     # The variable's own declaration is a key with no value on the line.
     assert re.findall(pattern, "  warehouse_id:\n    default: abc123\n") == []
+
+
+# --- the source gates (#148) ---------------------------------------------
+
+GATE_SCRIPT = "src/ingestion/source_gate.py"
+CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
+REQUIREMENTS_PATH = REPO_ROOT / "requirements-dev.txt"
+
+# The Bronze loader each gated source protects. A source added to the
+# contract (Open-Meteo, #125) has to be added here, or the test below fails.
+LOADERS = {
+    "green_taxi": "etl/02_bronze/10_load_green_taxi.sql",
+    "taxi_zones": "etl/02_bronze/30_load_taxi_zones.sql",
+}
+
+
+def task_running(job_definition, sql_path):
+    return next(
+        t for t in job_definition["tasks"]
+        if (t.get("sql_task") or {}).get("file", {}).get("path") == sql_path
+    )
+
+
+def gate_tasks(job_definition):
+    """{source: task} for every task that runs the source gate."""
+    gates = {}
+    for task in job_definition["tasks"]:
+        python = task.get("spark_python_task") or {}
+        if python.get("python_file") == GATE_SCRIPT:
+            parameters = python.get("parameters", [])
+            gates[parameters[parameters.index("--source") + 1]] = task
+    return gates
+
+
+def argument(task, flag):
+    parameters = task["spark_python_task"]["parameters"]
+    return parameters[parameters.index(flag) + 1]
+
+
+def ungated_loaders(job_definition):
+    """Gated sources whose Bronze loader does not wait for that source's gate."""
+    gates = gate_tasks(job_definition)
+    ungated = []
+    for source, loader_path in LOADERS.items():
+        upstream = {d["task_key"] for d in task_running(job_definition, loader_path).get("depends_on", [])}
+        if source not in gates or gates[source]["task_key"] not in upstream:
+            ungated.append(source)
+    return ungated
+
+
+def test_every_contracted_source_names_its_loader():
+    contracted = set(json.loads(CONTRACT_PATH.read_text(encoding="utf-8")))
+    assert contracted <= set(LOADERS), (
+        f"{sorted(contracted - set(LOADERS))} have a source contract but no Bronze loader "
+        "listed here, so nothing checks that their loader waits for the gate."
+    )
+
+
+def test_every_bronze_loader_waits_for_its_source_gate():
+    """Without the dependency a bad delivery lands in Bronze before, or
+    while, the gate refuses it."""
+    assert ungated_loaders(job()) == []
+
+
+def test_the_gates_read_the_volume_and_record_the_deployed_revision():
+    control_setup = task_running(job(), "etl/01_control/00_create_control_tables.sql")["task_key"]
+    for source, task in gate_tasks(job()).items():
+        assert argument(task, "--input").startswith("/Volumes/"), (
+            f"the {source} gate does not read the Volume, so it checks different files "
+            "than the Bronze loader loads."
+        )
+        assert "--record-control" in task["spark_python_task"]["parameters"], (
+            f"the {source} gate writes no rows to data_quality_results."
+        )
+        assert argument(task, "--code-revision") == "{{job.parameters.code_revision}}", (
+            f"the {source} gate does not stamp the job's code_revision (D25)."
+        )
+        assert control_setup in {d["task_key"] for d in task.get("depends_on", [])}, (
+            f"the {source} gate can run before data_quality_results exists."
+        )
+
+
+def test_the_gates_run_the_duckdb_version_ci_pins():
+    """The job, CI and the committed evidence must run one engine version."""
+    pinned = re.search(r"^duckdb==(\S+)", REQUIREMENTS_PATH.read_text(encoding="utf-8"), re.MULTILINE).group(1)
+    environments = {e["environment_key"]: e["spec"] for e in job().get("environments", [])}
+    for source, task in gate_tasks(job()).items():
+        dependencies = environments[task["environment_key"]].get("dependencies", [])
+        assert f"duckdb=={pinned}" in dependencies, (
+            f"the {source} gate's environment has {dependencies}, but requirements-dev.txt pins duckdb=={pinned}."
+        )
+
+
+def test_the_dq_dashboard_waits_for_the_source_gates():
+    dashboard = next(t for t in job()["tasks"] if t["task_key"] == "dq_dashboard")
+    upstream = {d["task_key"] for d in dashboard["depends_on"]}
+    missing = {t["task_key"] for t in gate_tasks(job()).values()} - upstream
+    assert not missing, f"the DQ dashboard can refresh before {sorted(missing)} has recorded its verdict."
+
+
+def test_the_gate_rule_would_catch_its_regression():
+    broken = copy.deepcopy(job())
+    task_running(broken, LOADERS["green_taxi"])["depends_on"] = [{"task_key": "00_create_control_tables"}]
+    assert ungated_loaders(broken) == ["green_taxi"]
