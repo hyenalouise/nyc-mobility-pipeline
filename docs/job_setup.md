@@ -11,7 +11,7 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 | Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
 | Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
 | Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
-| Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25) |
+| Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25). `green_taxi_input` and `taxi_zones_input`, which default to the landing paths the loaders read, and can point one gate at a test folder (#158) |
 | Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
 | Notifications | None yet. Alerting on failure is #131 |
 
@@ -95,6 +95,16 @@ flowchart LR
     control --> gate_tz --> load_tz
     control --> load_wx
 ```
+
+### Testing a gate without touching the landing folder (#158)
+
+Each gate reads its input from a job parameter, `green_taxi_input` or `taxi_zones_input`. The default is the landing path its loader reads, so a normal or scheduled run checks exactly what gets loaded. To show a gate refusing a bad delivery, stage the bad file in a separate folder and point only that gate at it:
+
+```bash
+databricks bundle run NYC_Mobility_Pipeline --target dev --profile crystal-workspace --params green_taxi_input=/Volumes/ftw-week-08/00-source/group_a_source/_test/green_taxi_blocked/*.parquet
+```
+
+The loaders always read the landing folder, so test data is never loaded. That makes a run with an override a test, not a load: use it only to make a gate refuse something. If the gate passed, its loader would load landing files this run didn't check.
 
 The gate is Python, and the SQL warehouse only runs SQL, so these two tasks run on serverless job compute. Their environment pins `duckdb==1.1.3`, the same version as `requirements-dev.txt`, CI and the committed evidence. `tests/test_bundle_contract.py` fails if the two pins drift, or if a loader stops waiting for its gate.
 
