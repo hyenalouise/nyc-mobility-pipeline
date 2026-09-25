@@ -357,7 +357,7 @@ The source gate reads parquet files through DuckDB using `read_parquet()`.
 Machine-readable source-validation evidence is stored at:
 
 ```text
-evidence/proof/source-validation/results.json
+evidence/source-validation/results.json
 ```
 
 The Issue #115 evidence recorded:
@@ -417,7 +417,7 @@ The two paths share only the intended original source-file set.
 | Compare file versions | Bronze and DuckDB both identified 3 source files | Satisfied |
 | Record source-file checksums | Bronze content-derived lineage values and independent physical-file SHA-256 values are recorded separately | Satisfied |
 | Include reproduction commands | Databricks SQL and DuckDB commands are included | Satisfied |
-| Save proof under `evidence/proof/` | This evidence file | Satisfied |
+| Save evidence under `evidence/pipeline-runs/` | This evidence file | Satisfied |
 
 ## Conclusion
 

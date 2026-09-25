@@ -128,7 +128,8 @@ For a data-affecting change, record the applicable items:
 - incremental, rerun, or failure-recovery behavior when relevant;
 - anything that remains unverified.
 
-Store concise reviewed summaries under `evidence/proof/`. Large logs and raw
+Store concise reviewed run summaries under `evidence/pipeline-runs/`. Store
+compact source-gate result files under `evidence/source-validation/`. Large logs and raw
 result exports belong in the approved external storage location.
 
 ## Security

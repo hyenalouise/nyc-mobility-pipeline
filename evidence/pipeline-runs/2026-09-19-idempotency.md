@@ -90,7 +90,7 @@ The remaining nine rows are `SUPERSEDED` or `FAILED` — the audit trail of the
 | Processing state is not incorrectly advanced | Yes — `completed_at` unchanged on every batch |
 | Batch-log behaviour for the duplicate request documented | Yes — below |
 | Content hash or source-version comparison included | Yes — `sha` unchanged per source |
-| Before/after evidence saved under `evidence/proof/` | This file |
+| Before/after evidence saved under `evidence/pipeline-runs/` | This file |
 
 ## Batch-log behaviour on a repeat request
 

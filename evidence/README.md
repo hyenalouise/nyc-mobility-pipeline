@@ -1,7 +1,16 @@
 # Evidence
 
-This folder contains compact, reviewed proof of pipeline behavior. Evidence is
+This folder contains compact, reviewed records of pipeline behavior. Evidence is
 append-only: add a new run-specific file rather than replacing an earlier result.
+
+## Folder guide
+
+| Location | Contents |
+|---|---|
+| [`pipeline-runs/`](pipeline-runs/) | Human-readable records of end-to-end, incremental, rerun, failure, recovery, deployment, and reconciliation checks |
+| [`source-validation/`](source-validation/) | Machine-readable JSON results emitted by the DuckDB source gate |
+
+Use the README inside each folder for its file index and interpretation guidance.
 
 ## What belongs here
 
@@ -24,5 +33,3 @@ append-only: add a new run-specific file rather than replacing an earlier result
 
 Large evidence belongs in the approved external storage location. The committed
 summary should identify where it can be found without exposing secrets.
-
-See [proof/README.md](proof/README.md) for the current evidence index.

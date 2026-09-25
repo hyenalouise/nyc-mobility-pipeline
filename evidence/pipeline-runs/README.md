@@ -1,4 +1,4 @@
-# Proof index
+# Pipeline-run evidence
 
 Each file below records a specific claim at a specific code and data state. It
 does not automatically describe the latest deployed production revision.
@@ -11,10 +11,8 @@ does not automatically describe the latest deployed production revision.
 | [`2026-09-19-failure-restart.md`](2026-09-19-failure-restart.md) | A failed gate blocks dependants and a repair succeeds safely |
 | [`2026-09-23-bronze-duckdb-reconciliation.md`](2026-09-23-bronze-duckdb-reconciliation.md) | DuckDB, source files, and Bronze reconcile independently |
 | [`2026-09-23-deployed-run-with-code-revision.md`](2026-09-23-deployed-run-with-code-revision.md) | A deployed run records the code revision used by its quality results |
+| [`2026-09-25-recovery-demonstration.md`](2026-09-25-recovery-demonstration.md) | A controlled source-gate failure is corrected and followed by a successful recovery run |
 | [`2026-09-25-source-gate-blocked-run.md`](2026-09-25-source-gate-blocked-run.md) | A pre-Bronze source gate blocks bad input, protects its loader, and exposes an operational timeout gap |
-| [`source-validation/results.json`](source-validation/results.json) | Current compact Green Taxi source-gate result set |
-| [`source-validation/taxi_zones_results.json`](source-validation/taxi_zones_results.json) | Accepted Taxi Zones source-gate result set |
-| [`source-validation/taxi_zones_broken_results.json`](source-validation/taxi_zones_broken_results.json) | Controlled failing Taxi Zones result set |
 
 ## Reading evidence correctly
 
@@ -27,7 +25,7 @@ does not automatically describe the latest deployed production revision.
 - The May incremental section records batch evidence but does not include a job
   run ID; do not invent one.
 
-## Adding proof
+## Adding pipeline-run evidence
 
 Use a date-prefixed filename and record:
 

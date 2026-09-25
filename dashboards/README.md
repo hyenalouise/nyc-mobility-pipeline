@@ -38,4 +38,4 @@ materially changed.
 
 Screenshots may be stored beside a definition only when they are small,
 reviewed, free of sensitive values, and useful as durable evidence. Prefer a
-run-specific evidence summary under `evidence/proof/` for factual claims.
+run-specific evidence summary under `evidence/pipeline-runs/` for factual claims.

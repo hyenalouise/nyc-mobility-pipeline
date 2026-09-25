@@ -177,4 +177,5 @@ Record only compact reviewed facts:
 - failed or warned checks and their owners;
 - what remains unverified.
 
-Store proof under `evidence/proof/`. Never overwrite an earlier run summary.
+Store run evidence under `evidence/pipeline-runs/`. Never overwrite an earlier
+run summary.

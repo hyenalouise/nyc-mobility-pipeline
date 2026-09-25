@@ -172,4 +172,5 @@ test data in a production landing folder.
   code, configuration, permissions, or platform availability.
 - Reconcile affected data again after recovery.
 
-See [runbook.md](runbook.md) and [evidence/proof/](../../evidence/proof/).
+See [runbook.md](runbook.md) and
+[evidence/pipeline-runs/](../../evidence/pipeline-runs/).

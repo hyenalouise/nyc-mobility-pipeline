@@ -20,4 +20,4 @@ hourly weather grain.
 
 The implemented layer is covered by the committed full-run and rerun evidence.
 See [`docs/architecture/data-model.md`](../../docs/architecture/data-model.md) and
-[`evidence/proof/README.md`](../../evidence/proof/README.md).
+[`evidence/pipeline-runs/README.md`](../../evidence/pipeline-runs/README.md).

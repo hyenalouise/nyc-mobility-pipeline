@@ -156,7 +156,7 @@ No duration-based warning is configured, since no duration threshold is currentl
 | Idempotency (#46) | Run again with May already loaded | Same row counts and content; the skip appears in `ingestion_batches` |
 | Failure recovery (#47) | Cancel a task mid-run, then use **Repair run** | Only the failed task and its dependents re-run; no duplicates |
 
-Commit short summaries under `evidence/proof/`, not full exports.
+Commit short summaries under `evidence/pipeline-runs/`, not full exports.
 
 ## Later
 

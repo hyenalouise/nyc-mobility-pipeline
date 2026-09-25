@@ -135,7 +135,7 @@ date range, model) are declared at the top of `20_load_open_meteo.sql`.
 | Every gate passes before the next layer publishes | Yes — all green in this run |
 | Final counts reconcile across layers | Yes — table above |
 | Provenance traces Gold back to source and batch | Yes — query above |
-| Final evidence saved under `evidence/proof/` | This file |
+| Final evidence saved under `evidence/pipeline-runs/` | This file |
 | Final dashboard measures match Analytics | **Not verified in this file** — see below |
 | A different team member follows the runbook successfully | **Not yet done** — see below |
 

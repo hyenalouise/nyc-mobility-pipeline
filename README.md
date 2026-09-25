@@ -81,7 +81,7 @@ Committed evidence records:
 Repository state and deployed workspace state are different things. A commit can
 be present on `main` before it is deployed. Verify the deployed Git revision and
 job state in Databricks before describing a repository change as live. See the
-[evidence index](evidence/proof/README.md) for the recorded run IDs and results.
+[evidence index](evidence/README.md) for the recorded run IDs and results.
 
 ## Data sources
 

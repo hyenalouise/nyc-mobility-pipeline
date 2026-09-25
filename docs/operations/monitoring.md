@@ -69,5 +69,5 @@ Both dashboards read tables that every `dev` and `prod` job write to, so a faile
 ## What's not monitored
 
 - **Only one thing pushes an alert:** the failure email (`email_notifications.on_failure`). Everything else in this doc is a dashboard someone has to open.
-- **A hung run sends nothing.** A task stuck waiting on compute (like the serverless Spark "Pending" hang in `evidence/proof/2026-09-25-source-gate-blocked-run.md`) never fails, so no email goes out, and cancelling it sends none either. `no_stuck_runs` only catches it after 6 hours, the next time the Control gate runs.
+- **A hung run sends nothing.** A task stuck waiting on compute (like the serverless Spark "Pending" hang in `evidence/pipeline-runs/2026-09-25-source-gate-blocked-run.md`) never fails, so no email goes out, and cancelling it sends none either. `no_stuck_runs` only catches it after 6 hours, the next time the Control gate runs.
 - **No trend view for `INFO` measurements** such as `pickup_zone_unmatched` and `weather_unmatched`. Their values are recorded every run, but nothing charts them over time.

@@ -37,7 +37,8 @@ or status statements.
 | Gate behavior | validation SQL and `source_gate.py` | `data/validation.md` defines the shared contract |
 | Deployment workflow | [`.github/workflows/cd-deploy.yml`](../.github/workflows/cd-deploy.yml) | `operations/deployment.md` explains setup and approval |
 | Monitoring thresholds and response | Control and DQ tables plus dashboard definitions | `operations/monitoring.md` explains what to watch |
-| Current run results | [`evidence/proof/`](../evidence/proof/) | proof summaries cite run and code revisions |
+| Current run results | [`evidence/pipeline-runs/`](../evidence/pipeline-runs/) | run summaries cite run and code revisions |
+| Source-gate result files | [`evidence/source-validation/`](../evidence/source-validation/) | compact JSON results record accepted and controlled failing inputs |
 | Design history | `governance/decisions.md` | entries preserve the context at decision time |
 | Deployed workspace state | Databricks job and run metadata | repository docs must not assume a commit is deployed |
 

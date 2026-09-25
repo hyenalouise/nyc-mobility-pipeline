@@ -82,11 +82,11 @@ folder is the source; no filename is hardcoded.
 
 Rerun behavior: a second run against the same files reports zero new files,
 registers no batch and writes no rows. Proven in
-`evidence/proof/2026-09-19-idempotency.md`.
+`evidence/pipeline-runs/2026-09-19-idempotency.md`.
 
 Incremental behavior: files arriving one month at a time are each loaded once,
 and earlier months' batch records are never rewritten. Proven in
-`evidence/proof/2026-09-19-incremental.md`.
+`evidence/pipeline-runs/2026-09-19-incremental.md`.
 
 Known limitation: the landing path is a literal inside `read_files`, which cannot
 take a variable, so staging a subset of files for a test means moving files in
@@ -228,7 +228,7 @@ null, `LocationID` unique, `Borough` not null.
 
 A clean file is `ACCEPTED` (exit code 0); a file failing any check is `BLOCKED`
 (exit code 1) and Bronze must not proceed. Evidence for both cases is recorded
-under `evidence/proof/source-validation/`.
+under `evidence/source-validation/`.
 
 Both a clean snapshot and each defect case (duplicate `LocationID`, blank
 `Borough`, and a non-numeric or out-of-range `LocationID`) are exercised in
@@ -252,7 +252,7 @@ step a restart would append a second copy of every row.
 
 Restart point on failure: re-run the same file for that source, or use **Repair
 run** on the failed job run. Proven in
-`evidence/proof/2026-09-19-failure-restart.md`. Each source's own change-detection logic (content hash for Taxi, business key for Weather, always-on-full-refresh for Zones) determines what actually gets reloaded — already-successful work is not redone.
+`evidence/pipeline-runs/2026-09-19-failure-restart.md`. Each source's own change-detection logic (content hash for Taxi, business key for Weather, always-on-full-refresh for Zones) determines what actually gets reloaded — already-successful work is not redone.
 
 Bronze success does not imply Silver success. A failed Silver step does not get silently skipped just because its Bronze batch succeeded.
 
@@ -374,7 +374,7 @@ successful while having silently swallowed one.
   `The cluster is in unexpected state Pending`). It hasn't written
   anything yet. Cancel the run and start it again; this is a platform
   hiccup, so a plain retry is the right action (see
-  `evidence/proof/2026-09-25-source-gate-blocked-run.md`).
+  `evidence/pipeline-runs/2026-09-25-source-gate-blocked-run.md`).
 
 ### How to verify the resulting data
 
@@ -410,4 +410,4 @@ confirm the rerun did not duplicate anything.
 
 A full run through Detect, Diagnose, Assess impact, Fix, Rerun and Verify,
 with real run IDs and query results, is recorded in
-`evidence/proof/2026-09-25-recovery-demonstration.md`.
+`evidence/pipeline-runs/2026-09-25-recovery-demonstration.md`.

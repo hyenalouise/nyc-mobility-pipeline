@@ -130,7 +130,7 @@ retroactively. They did not.
 | March records remain stable after April and May arrive | Yes — to the millisecond |
 | Important measures reconcile after each run | Yes — fare total at each step, summing to the combined total |
 | Evidence includes run IDs, batch IDs, counts, timestamps | Yes |
-| Proof saved under `evidence/proof/` | This file |
+| Evidence saved under `evidence/pipeline-runs/` | This file |
 
 ## Scope: what this proves and what it does not
 
