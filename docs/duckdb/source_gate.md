@@ -1,7 +1,7 @@
 # DuckDB Pre-Ingestion Source Gate
 
 Purpose:
-Validate the Green Taxi and Taxi Zones source files before Bronze ingestion. It runs locally, in CI against generated samples, and as a task in the Databricks job before each source's Bronze loader.
+Validate the Green Taxi, Taxi Zones, and Open Mateo source files before Bronze ingestion. It runs locally, in CI against generated samples, and as a task in the Databricks job before each source's Bronze loader.
 
 Flow:
 

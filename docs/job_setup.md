@@ -83,7 +83,7 @@ nothing meaningful to show otherwise.
 
 ## Source gates before Bronze (#148)
 
-Green Taxi and Taxi Zones are checked before they are loaded. Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17). Open-Meteo has no gate until it has a contract (#125).
+All three sources are checked before they are loaded; Open-Meteo's gate was added with its contract (#125, #152). Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17).
 
 Each loader waits only for its own source's gate, so a BLOCKED Green Taxi delivery stops Green Taxi and nothing else. Task names are the task keys in `databricks.yml`:
 
@@ -92,13 +92,14 @@ flowchart LR
     control["00_create_control_tables"]
     gate_gt["05_source_gate_green_taxi"]
     gate_tz["05_source_gate_taxi_zones"]
+    gate_wx["05_source_gate_weather"]
     load_gt["10_load_green_taxi"]
     load_tz["30_load_taxi_zones"]
-    load_wx["20_load_open_meteo<br/>(no gate yet)"]
+    load_wx["20_load_open_meteo"]
 
     control --> gate_gt --> load_gt
     control --> gate_tz --> load_tz
-    control --> load_wx
+    control --> gate_wx --> load_wx
 ```
 
 ### Testing a gate without touching the landing folder (#158)
