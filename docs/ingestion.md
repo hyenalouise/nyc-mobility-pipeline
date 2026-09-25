@@ -266,3 +266,149 @@ On critical schema/quality failure retain diagnostic evidence, mark the attempt 
 
 Discovery follows arrival/source versions, not maximum event time. Late records remain eligible even if their event month is older. A revised source batch can affect multiple event-date aggregates; recompute every affected downstream contribution and preserve unaffected data.
 
+## Recovery runbook
+
+This section answers the questions a developer needs when the pipeline
+fails: how to run it, how to know it worked, how to find a failure, what
+is safe to rerun, how to verify the resulting data, and what needs
+Databricks or production access.
+
+**Vocabulary.** These three words are not interchangeable, and using the
+wrong one leads to the wrong recovery action:
+
+- **Retry** — repeat the exact same failed thing, unchanged. Correct when
+  the failure was temporary (a platform or network hiccup, a task stuck
+  waiting for compute), where the same input can succeed on a second try.
+  Retrying a BLOCK on bad data only fails again: useful as proof the
+  failure is real, but not a recovery action.
+- **Rerun** — run the job again after something has changed (a fixed file,
+  a corrected configuration, a restored default). This is the normal
+  recovery action once the actual problem is addressed.
+- **Backfill** — process a historical period that was missed entirely,
+  separate from retrying or rerunning the most recent attempt. 
+  
+Backfill in this pipeline is a normal run after one deliberate change:
+widening the period the pipeline expects. For Green Taxi, the loader
+already discovers every file in its landing folder and loads any file
+with no matching `SUCCESS` batch in `ingestion_batches`, whatever month
+it covers. But both the source gate and the Bronze gate check pickups
+against the declared window (`reporting_window` in
+`config/source_contract.json`, and the same Mar–May dates in
+`etl/02_bronze/90_validate_green_taxi.sql`), so a file from an older
+month would be blocked as out of window. To backfill: widen that window
+in both places through a reviewed PR, place the missing file in the
+landing folder, then run the job normally. For Weather, change the
+requested window in `20_load_open_meteo.sql` and the matching
+`requested_window` in the contract. Nothing already loaded is reloaded,
+because every loaded file is recognised by its content hash.
+
+### How to run the pipeline
+
+```bash
+databricks bundle run NYC_Mobility_Pipeline --target dev
+```
+
+Runs the job with its default inputs, the same ones a scheduled run uses.
+To point one source's gate at a different file for a controlled test (not
+a real load), override that source's input parameter:
+
+```bash
+databricks bundle run NYC_Mobility_Pipeline --target dev \
+  --params 'green_taxi_input=/Volumes/.../some_other_file/*.parquet'
+```
+
+The equivalent parameters exist for `taxi_zones_input` and `weather_input`.
+An overridden gate can never let its loader run, even if the overridden
+input happens to pass, because each gate is also given the exact path its
+loader reads and fails its own task if the two differ. This makes an
+override run safe to use for a deliberate test: it can prove a gate
+blocks something, but it can never cause a load the run did not itself
+check.
+
+### How to know it succeeded
+
+Check the job run's overall status. A run where every task shows
+**Succeeded** completed cleanly. A run showing **Upstream failed** on later
+tasks means an earlier task failed and stopped that branch on purpose —
+this is the gate working as intended, not a separate bug to chase.
+
+Beyond the run page itself, every check writes a row to
+`ftw-week-08`.`01-control`.`data_quality_results`, and every gate ends
+with a statement that raises an error on any blocking failure. A run that
+reports success genuinely had no blocking failures; it cannot look
+successful while having silently swallowed one.
+
+### How to find a failure
+
+1. Open the job run and look for a task marked **Failed** (not
+   **Upstream failed** — that label means the task itself never ran
+   because something it depends on failed first; the real failure is
+   upstream of it).
+2. Click into the failed task's output. A source-gate task prints which
+   named check failed and how many rows were affected. A SQL gate's
+   `raise_error` message names the check that blocked it.
+3. Query `data_quality_results` for the run's `run_id` to see every
+   check's status, not just the one that blocked: a failure is rarely
+   isolated from its `WARN` and `INFO` neighbors, and the full picture
+   speaks to whether this is an isolated defect or part of a wider
+   problem with the delivery.
+
+### What is safe to rerun
+
+- **A gate run with no override** is always safe to rerun: it checks
+  exactly what the loader will load, every time.
+- **A repair from the CLI with no parameters returns to the default
+  input.** If a run was overridden for a test, repairing it is not the
+  same as retrying that test — the repaired gate checks the real landing
+  folder, not the test file. To repeat a test, start a new run with the
+  override passed again, rather than repairing the earlier one.
+- **A blocked gate will fail again on a bare retry** if nothing about the
+  input has changed, because a BLOCK on bad data is a property of the
+  data, not the platform. Retrying without fixing the input is not a
+  recovery action by itself, but it is useful evidence that the failure
+  is real and repeatable.
+- **A rerun with the real, unchanged input is a safe no-op** if that
+  content was already loaded successfully: the loader's `content_sha256`
+  check recognizes the file as already processed and adds nothing.
+  - **A source gate that prints its verdict and then sits for minutes** is
+  stuck waiting for the serverless Spark service (its driver log repeats
+  `The cluster is in unexpected state Pending`). It hasn't written
+  anything yet. Cancel the run and start it again; this is a platform
+  hiccup, so a plain retry is the right action (see
+  `evidence/proof/2026-09-25-source-gate-blocked-run.md`).
+
+### How to verify the resulting data
+
+Before and after any recovery action, compare row counts directly rather
+than trusting that a green run implies correct data:
+
+```sql
+SELECT COUNT(*) FROM `ftw-week-08`.`02-bronze`.green_taxi_raw;
+SELECT COUNT(*) FROM `ftw-week-08`.`01-control`.ingestion_batches;
+```
+
+The same pattern applies to any other table in the affected layer. Counts
+that are unchanged after a blocked run confirm nothing bad reached the
+table. Counts that are unchanged after a rerun of already-loaded content
+confirm the rerun did not duplicate anything.
+
+### What requires Databricks or production credentials
+
+- Deploying to `dev` requires Databricks workspace access and the CLI, but
+  creates only the operator's own `[dev <username>]` job — no shared
+  credential or approval is needed, and it cannot affect anyone else's
+  sandbox or the shared landing folder.
+- Deploying to `prod` and approving a production deployment currently sit
+  with the role documented in `docs/governance.md`'s Deployment Access
+  table. Nothing in this runbook requires prod access: every step here can
+  be demonstrated safely in `dev`.
+- Querying `data_quality_results`, `ingestion_batches`, or any Bronze or
+  Silver table requires the same Unity Catalog read access already
+  granted to the project team; no elevated access is needed to follow
+  this runbook.
+
+### Worked example
+
+A full run through Detect, Diagnose, Assess impact, Fix, Rerun and Verify,
+with real run IDs and query results, is recorded in
+`evidence/proof/2026-09-25-recovery-demonstration.md`.
