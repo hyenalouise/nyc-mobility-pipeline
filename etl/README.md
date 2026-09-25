@@ -1,25 +1,38 @@
-# SQL implementation
+# ETL implementation
 
-SQL is organized in pipeline order:
+Production SQL is organized in pipeline order:
 
-1. `01_control/`
-2. `02_bronze/`
-3. `03_silver/`
-4. `04_integration/`
-5. `05_gold/`
-6. `06_analytics/`
+1. `01_control/` — operational state and the shared DQ contract
+2. `02_bronze/` — source-preserving ingestion and Bronze gates
+3. `03_silver/` — typing, standardization, disposition, and Silver gates
+4. `04_integration/` — trip-to-zone and trip-to-weather relationship maps
+5. `05_gold/` — approved dimensions, facts, and the Gold gate
+6. `06_analytics/` — business-question datasets and the Analytics gate
 
-There is no `00_source_profile/` folder. Source profiling lives in `notebooks/` and creates no tables (D17).
+The folder number indicates logical execution order. Actual runtime dependencies
+are defined in [`databricks.yml`](../databricks.yml) and documented in
+[`docs/operations/job-setup.md`](../docs/operations/job-setup.md).
 
-The folder number describes the planned engineering sequence. It does not mean that each folder has a corresponding Databricks schema. `04_integration` creates no tables of its own: it resolves trips to zones and to the weather hour without changing the grain of a trip, so its output is written by the Gold build into `05-gold`. `01_control` owns persisted operational metadata in the `01-control` schema.
+## File conventions
 
-Approved schema names are fixed in [docs/naming_conventions.md](../docs/naming_conventions.md).
+- `00_` initializes shared objects.
+- `10_`, `20_`, and `30_` load or transform data.
+- `90_validate_...` is the gate for a source or combined layer.
+- Files use lowercase names and explicit numeric ordering.
+- Persisted tables use fully qualified catalog, schema, and table names.
 
-Validation belongs beside the layer it validates. Each source has its own exit gate in that layer, because each source defines good data differently (D17). Within a layer, use ordered filenames: `00_` setup, `10_`/`20_`/`30_` tasks, and one `90_validate_<source>` file per source (for example `90_validate_green_taxi.sql`). Integration and later stages combine sources and use one `90_validate_<stage>` file.
+Validation stays beside the data it validates. Bronze and Silver have one gate
+per source because each source defines good data differently. Integration, Gold,
+and Analytics use combined gates after the source lanes converge.
 
-The numeric prefixes make navigation and review order clear. They do not replace explicit Databricks job dependencies. Resolve actual names from approved configuration and use fully qualified `catalog.schema.table` references.
+The source gates that run before Bronze are Python and live in
+[`src/ingestion/source_gate.py`](../src/ingestion/source_gate.py).
 
-Stages 04 to 06 are placeholder files: each one carries its purpose, upstream
-dependency, target table, grain and the checks to implement, and ends with a
-`raise_error` so an unfinished stage fails its job task instead of looking
-successful. Delete that block when the query is written.
+## Change rule
+
+When adding or removing an ETL file, update:
+
+1. the relevant layer README;
+2. `databricks.yml` when it is a job task;
+3. `docs/operations/job-setup.md` when the task graph changes;
+4. tests that enforce bundle and documentation parity.

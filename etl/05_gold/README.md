@@ -1,25 +1,23 @@
 # 05 — Gold
 
-Approved facts and dimensions, per `docs/data_model.md`. Dimensions are built before facts, and a fact resolves its foreign keys only against built dimensions, never against Silver.
+Gold implements the approved dimensional model. Dimensions are built before
+facts, and facts resolve foreign keys against built dimensions and validated
+Integration maps.
 
-| File | Target table | Status |
+| File | Target | Purpose |
 |---|---|---|
-| `10_dim_date.sql` | `dim_date` | Implemented, pending proof run |
-| `11_dim_hour.sql` | `dim_hour` | Implemented, pending proof run |
-| `12_dim_taxi_zone.sql` | `dim_taxi_zone` | Implemented, pending proof run |
-| `13_dim_weather_classification.sql` | `dim_weather_classification` | Implemented, pending proof run |
-| `20_fact_weather_hourly.sql` | `fact_weather_hourly` | Implemented, pending proof run |
-| `30_fact_taxi_trip.sql` | `fact_taxi_trip` | Implemented, pending proof run |
-| `90_validate_gold.sql` | Gold gate: PKs, FKs, grain, measures | Implemented, pending proof run |
+| `10_dim_date.sql` | `dim_date` | NYC-local calendar members |
+| `11_dim_hour.sql` | `dim_hour` | Hours 0–23 |
+| `12_dim_taxi_zone.sql` | `dim_taxi_zone` | Validated Taxi Zone members, including documented sentinels |
+| `13_dim_weather_classification.sql` | `dim_weather_classification` | Weather-code and precipitation-band combinations |
+| `20_fact_weather_hourly.sql` | `fact_weather_hourly` | Hourly weather at coordinate, UTC hour, and model grain |
+| `30_fact_taxi_trip.sql` | `fact_taxi_trip` | Accepted trips with deterministic identity and dimensional keys |
+| `90_validate_gold.sql` | DQ results | Validates facts, dimensions, keys, relationships, grain, and measures |
 
-Trip and weather measurements stay at their own grain. A trip carries only the weather classification key; temperature and precipitation stay in `fact_weather_hourly` (D12).
+Trip and weather measurements remain in separate facts. A trip carries only its
+pickup-hour weather-classification key; temperature and precipitation remain at
+hourly weather grain.
 
-Run `20_fact_weather_hourly.sql` before `30_fact_taxi_trip.sql`. The trip build
-reads Silver `green_taxi_clean` joined to the validated `04-integration` key
-maps on `trip_hash`, then uses the weather fact as a build-time lookup for the
-pickup-hour classification key; it does not store a fact-to-fact foreign key.
-
-`90_validate_gold.sql` persists one result row per check to
-`01-control`.data_quality_results and raises an error when any blocking check
-fails. The Gold files are not marked validated until the Databricks proof run is
-captured.
+The implemented layer is covered by the committed full-run and rerun evidence.
+See [`docs/architecture/data-model.md`](../../docs/architecture/data-model.md) and
+[`evidence/proof/README.md`](../../evidence/proof/README.md).

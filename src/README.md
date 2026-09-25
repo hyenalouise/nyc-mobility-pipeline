@@ -1,5 +1,16 @@
-# Source code
+# Python source
 
-Contains reusable Python source code. External-source discovery, API requests, downloads, metadata capture, and ingestion orchestration belong in `src/ingestion/`.
+Reusable Python that is executed or intentionally retained by the project lives
+under `src/`.
 
-SQL remains under the ordered `etl/` directories so each implementation has one obvious location.
+Current contents:
+
+- `ingestion/source_gate.py` — active DuckDB pre-Bronze validation for Green
+  Taxi, Taxi Zones, and Weather;
+- `ingestion/batch_tracking.py` — retained batch-tracking helper, not invoked by
+  the configured Databricks job;
+- `ingestion/schema_drift_check.py` — retained schema helper, not invoked by the
+  configured Databricks job.
+
+Relational production transformations remain in `etl/`. Do not introduce a
+second Python implementation of the complete pipeline under `src/`.
