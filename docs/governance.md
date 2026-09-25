@@ -467,7 +467,7 @@ Pipeline run
 Code revision
 ```
 
-Since [Issue #148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148), the DuckDB source gates execute before the Green Taxi and Taxi Zones Bronze loaders.
+Since [Issue #148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148), the DuckDB source gates execute before the Green Taxi and Taxi Zones Bronze loaders, and since [Issue #125](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/125) before the Open-Meteo loader too.
 
 Each source-gate check writes a row to `data_quality_results` with `layer = 'source'`. This makes source validation visible alongside Bronze, Silver, Integration, Gold, and Analytics validation results.
 
