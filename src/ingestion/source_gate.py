@@ -1608,8 +1608,7 @@ def control_rows(source, inputs, results, run_id, code_revision):
             None,
             None,
             revision,
-            # The same placeholder the SQL gates write until #126 names
-            # an owner per check.
+            # Named owner of the source-gate checks (#126).
             "Ina Magno",
             evidence_location,
             result["details"],
