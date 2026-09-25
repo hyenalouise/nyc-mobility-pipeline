@@ -110,7 +110,7 @@ jobs:
           fi
           echo "Both secrets are present for the '${{ inputs.target }}' environment."
 
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.17.0
 
       # Inputs go through env: rather than being interpolated directly into
       # the run: script. A workflow_dispatch input is attacker-controlled
