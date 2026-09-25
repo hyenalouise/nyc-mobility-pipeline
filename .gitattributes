@@ -8,3 +8,5 @@ etl/**/*.py -whitespace
 notebooks/**/*.py -whitespace
 notebooks/**/*.sql -whitespace
 tests/**/*.py -whitespace
+*.sql linguist-language=SQL
+*.sql linguist-detectable=true
