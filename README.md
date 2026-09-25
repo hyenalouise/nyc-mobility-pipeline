@@ -103,8 +103,14 @@ nyc-mobility-pipeline/
 
 ├── dashboards/              # business-facing dashboards and dashboard assets
 │   ├── README.md            # dashboard documentation and usage notes
-│   └── 11_data_quality_dashboard/
-│       └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
+│   ├── 11_data_quality_dashboard/
+│   │   └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
+│   │                         # Databricks dashboard definition
+│   ├── 11_analytics_dashboard/
+│   │   └── 10_NYC_mobility_analytics_dashboard.lvdash.json
+│   │                         # Databricks dashboard definition
+│   └── 11_pipeline_execution_monitoring/
+│       └── 10_NYC_mobility_pipeline_execution_dashboard.lvdash.json
 │                             # Databricks dashboard definition
 
 ├── docs/                    # architecture, model, validation and decision records

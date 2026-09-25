@@ -48,6 +48,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D23 | Store wall-clock business timestamps as `TIMESTAMP_NTZ` and convert with `convert_timezone` | Approved | No stored timestamp depends on the cluster's session timezone |
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
+| D26 | Add a `no_stuck_runs` check to the Control gate, detecting abandoned pipeline runs | Approved | A run left STARTED past `stuck_after_hours` now fails the gate instead of going unnoticed |
 | D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
 | D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Approved through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
 | D29 | Block on trips that end before they start, not on zero-length trips; keep the distance and passenger checks as they are | Approved through Issue #153 | A month with a few more zero-length trips no longer stops the scheduled run, and a delivery with reversed timestamps still does |
@@ -946,6 +947,99 @@ different code and nothing says which.
   controlled deployment rather than a limitation of it.
 
 
+## Monitoring decisions
+
+### D26: `no_stuck_runs` check for pipeline_runs
+
+**Status:** Approved
+**Decision date:** 2026-09-24
+
+**Decision:**
+
+`90_validate_control.sql` gains an eighth check, `no_stuck_runs`, mirroring
+check 4 (`no_stuck_batches`): a run still `STARTED` past `stuck_after_hours`
+is flagged as abandoned rather than in progress. It reads only the existing
+`pipeline_runs` columns (`status`, `started_at`); no schema change is
+required.
+
+Of the classroom monitoring framework's five execution signals (STATUS,
+DURATION, FAILURES, RECENCY, RETRIES), STATUS, DURATION, FAILURES, and
+RECENCY are all directly answerable from `pipeline_runs`'s existing columns.
+RETRIES — linking a run to the failed attempt it replaces — would need a
+schema change and is explicitly deferred; see Rejected alternatives.
+
+**Reason:**
+
+A run that crashes or hangs mid-execution leaves a row permanently in
+`STARTED`, which explains nothing and blocks nothing on its own. This check
+surfaces that condition the same way `no_stuck_batches` already does for
+`ingestion_batches`.
+
+**Rejected alternatives:**
+
+- **Adding a `previous_attempt_run_id` column to `pipeline_runs`** to
+  support a RETRIES signal. Attempted and reverted, including on the live table (see Operational note below). Populating it required
+  either a manual `UPDATE` after every retry or a job-level parameter a
+  person must remember to supply — both depend on a human step with nothing
+  to catch a missed or wrong value, so the column would sit at `NULL`
+  indefinitely with no proof it was ever used correctly. It also introduced
+  real migration risk: Databricks SQL's `ALTER TABLE ... ADD COLUMN` does
+  not support an `IF NOT EXISTS` modifier (confirmed via
+  `PARSE_SYNTAX_ERROR`), and the idempotent workaround added meaningful
+  complexity for a column with no functioning consumer. Deferred until
+  there is a way to populate it automatically, without a human step.
+- **Whole-pipeline execution tracking**, writing `pipeline_runs` rows from
+  every `90_validate_*` gate rather than Control alone. Out of scope for
+  this pass; `pipeline_runs` remains written to only by
+  `90_validate_control.sql`. The last gate in the chain (Gold) could stand
+  in as a proxy for "did the whole pipeline run" if this is revisited, or
+  Databricks' own native job-run history could be used instead of
+  expanding `pipeline_runs`.
+
+**Consequences:**
+
+- `no_stuck_runs` participates in the same blocking logic as
+  `no_stuck_batches` (`WARN` severity, `threshold_pct = 0.0`), so a stuck
+  run fails the gate, not just warns.
+- RETRIES remains an open signal for the Execution layer; a future
+  decision should revisit it once an automatic, non-human-dependent way to
+  link a retry to its failed attempt exists.
+- STATUS, DURATION, FAILURES, and RECENCY require no further schema work;
+  all four are already answerable from `pipeline_runs`'s existing columns.
+
+**Operational note (2026-09-24):**
+
+The live `pipeline_runs` table still carried `previous_attempt_run_id` from
+the reverted attempt described above — the column's own `ALTER TABLE ADD
+COLUMNS` had already run against the shared table before that attempt was
+rolled back in code, so removing the code did not remove the column. This
+surfaced as `DELTA_INSERT_COLUMN_ARITY_MISMATCH` on the Control gate's insert
+into `pipeline_runs`, which expects the 6 columns this decision assumes.
+
+Databricks SQL's `DROP COLUMN` requires column mapping (`delta.columnMapping.mode
+= 'name'`), which is not enabled by default and cannot later be reverted to
+`none`. Column mapping was enabled and the leftover column was dropped:
+
+    ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
+    SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
+
+    ALTER TABLE `ftw-week-08`.`01-control`.pipeline_runs
+    DROP COLUMN previous_attempt_run_id;
+
+This is a permanent property of the table going forward. It does not change
+query behavior or require any reader/writer on current Databricks compute to
+change anything, but it is a one-way change worth knowing about if the
+table's properties are inspected later.
+
+A seeded test row (`demo-stuck-run-001`), used earlier to produce evidence of
+a failing gate run, was also deleted directly from the live table (table
+version 21) as part of this same cleanup.
+
+**Files:**
+
+- `etl/01_control/90_validate_control.sql`
+
+
 ## Scheduling decision
 
 ### D27: A weekly schedule, Monday 06:00 New York time
@@ -1028,6 +1122,7 @@ it.
 - Freshness monitoring (#119, #131) can use 8 days as its staleness threshold.
 - 06:00 is New York local time, so the run moves by an hour in UTC terms when
   daylight saving changes. The local time stays the same.
+
 
 ## Source gate decision
 

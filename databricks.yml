@@ -76,6 +76,10 @@ resources:
       display_name: NYC Mobility Analytics Dashboard
       file_path: dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json
       warehouse_id: ${var.warehouse_id}
+    pipeline_execution_dashboard:
+      display_name: NYC Mobility Pipeline Execution Dashboard
+      file_path: dashboards/11_pipeline_execution_monitoring/10_NYC_mobility_pipeline_execution_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
   jobs:
     NYC_Mobility_Pipeline:
       name: NYC Mobility Pipeline
@@ -404,6 +408,14 @@ resources:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
             dashboard_id: ${resources.dashboards.analytics_dashboard.id}
+        - task_key: pipeline_execution_monitoring
+          depends_on:
+            - task_key: 90_validate_control
+          run_if: ALL_DONE
+          dashboard_task:
+            subscription: {}
+            warehouse_id: ${var.warehouse_id}
+            dashboard_id: ${resources.dashboards.pipeline_execution_dashboard.id}
       # Serverless job compute for the three Python source gates. The SQL
       # warehouse runs SQL only. duckdb is pinned to the version in
       # requirements-dev.txt, so the job runs the same engine as CI and the

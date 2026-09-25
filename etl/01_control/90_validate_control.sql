@@ -199,6 +199,53 @@ FROM checks;
 
 
 -- ------------------------------------------------------------
+-- 8. Stuck runs. Mirrors check 4 (no_stuck_batches), but for pipeline_runs
+--    itself: a run still STARTED long after it began was abandoned by a
+--    crash or a hung job, not something genuinely in progress. Runs before
+--    the UPDATE below, so a stuck-run failure is reflected in this run's
+--    own recorded status rather than being written as SUCCESS and only
+--    caught by the final raise_error. Excludes this run's own row
+--    explicitly (run_id <> dq_run_id), since this run is itself still
+--    STARTED at this point and must not flag itself.
+-- ------------------------------------------------------------
+INSERT INTO `ftw-week-08`.`01-control`.data_quality_results
+SELECT
+    dq_run_id,
+    current_timestamp(),
+    'control',
+    'pipeline_runs',
+    'no_stuck_runs',
+    'lifecycle',
+    'WARN',
+    `ftw-week-08`.`01-control`.dq_status(
+        'WARN',
+        fail_count,
+        CASE WHEN total_count = 0 THEN 0.0 ELSE fail_count * 100.0 / total_count END,
+        0.0
+    ),
+    fail_count,
+    total_count,
+    CASE WHEN total_count = 0 THEN 0.0 ELSE fail_count * 100.0 / total_count END,
+    0.0,
+    NULL,
+    NULL,
+    code_revision,
+    'TODO',
+    NULL,
+    CONCAT('stuck threshold (hours): ', CAST(stuck_after_hours AS STRING))
+FROM (
+    SELECT
+        COUNT_IF(
+            status = 'STARTED'
+            AND run_id <> dq_run_id
+            AND started_at < current_timestamp() - MAKE_INTERVAL(0, 0, 0, 0, stuck_after_hours)
+        ) AS fail_count,
+        COUNT(*) AS total_count
+    FROM `ftw-week-08`.`01-control`.pipeline_runs
+);
+
+
+-- ------------------------------------------------------------
 -- Gate result. Blocks Bronze when a blocking check failed.
 -- ------------------------------------------------------------
 UPDATE `ftw-week-08`.`01-control`.pipeline_runs
@@ -210,6 +257,7 @@ SET completed_at = current_timestamp(),
                 ) THEN 'FAILED' ELSE 'SUCCESS'
              END
 WHERE run_id = dq_run_id;
+
 
 SELECT CASE
          WHEN COUNT_IF(status = 'FAIL') > 0

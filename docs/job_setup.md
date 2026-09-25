@@ -10,7 +10,7 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 |---|---|
 | Name | `NYC Mobility Pipeline`. A `dev` deploy creates a separate `[dev <your-name>] NYC Mobility Pipeline` |
 | Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
-| Compute | 32 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 2 dashboard tasks. The 2 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
+| Compute | 34 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 3 dashboard tasks. The 3 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
 | Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25). `green_taxi_input`, `taxi_zones_input` and `weather_input`, which default to the landing paths the loaders read, and can point one gate at a test folder (#158) |
 | Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
 | Notifications | Email on failure. In `dev`, only the person who deployed it (`${workspace.current_user.userName}`); in `prod`, the whole team, since that's a shared pipeline (#131) |
@@ -72,12 +72,14 @@ built in (#122).
 |---|---|---|---|
 | `dq_dashboard` | NYC Mobility Data Quality Dashboard | `dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json` | every validation gate task |
 | `nyc_mobility_analytics` | NYC Mobility Analytics Dashboard | `dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json` | `90_validate_analytics` |
+| `pipeline_execution_monitoring` | NYC Mobility Pipeline Execution Dashboard | `dashboards/11_pipeline_execution_monitoring/10_NYC_mobility_pipeline_execution_dashboard.lvdash.json` | `90_validate_control` |
 
-`dq_dashboard` runs regardless of whether upstream tasks passed or failed
-(`run_if: ALL_DONE`), so a failing pipeline still gets a refreshed data
-quality view showing what failed. `nyc_mobility_analytics` only runs after
-the analytics gate passes, since it presents validated business answers and
-has nothing meaningful to show otherwise.
+`dq_dashboard` and `pipeline_execution_monitoring` both run regardless of
+whether upstream tasks passed or failed (`run_if: ALL_DONE`), so a failing
+pipeline still gets a refreshed view of what failed — data quality in one
+case, run health in the other. `nyc_mobility_analytics` only runs after the
+analytics gate passes, since it presents validated business answers and has
+nothing meaningful to show otherwise.
 
 ## Source gates before Bronze (#148)
 
