@@ -1,10 +1,12 @@
-# DuckDB Pre-Ingestion Source Gate
+# DuckDB pre-ingestion source gate
 
-Purpose:
-Validate the Green Taxi, Taxi Zones, and Open Mateo source files before Bronze ingestion. It runs locally, in CI against generated samples, and as a task in the Databricks job before each source's Bronze loader.
+Validate Green Taxi, Taxi Zones, and Open-Meteo source inputs before Bronze
+ingestion. The same module runs locally, in CI against generated samples, and as
+three tasks in the Databricks job.
 
-Flow:
+## Flow
 
+```text
 Source Files
     ↓
 DuckDB Source Gate
@@ -12,8 +14,9 @@ DuckDB Source Gate
 ACCEPTED / BLOCKED
     ↓
 Bronze Ingestion
+```
 
-Exit Codes
+## Exit codes
 
 `src/ingestion/source_gate.py` treats these as a supported interface — CI
 (`.github/workflows/ci.yml`) and any orchestrating job branch on the exact
@@ -25,12 +28,14 @@ that file; keep this table in sync with them.
 | 0 | `EXIT_ACCEPTED` | No blocking check failed. |
 | 1 | `EXIT_BLOCKED` | At least one check has status FAIL: a BLOCK check with any failing row, or a WARN check above its threshold. INFO checks never cause it. |
 | 2 | `EXIT_INVALID_CONFIGURATION` | The gate never ran a check — `MISSING_CONTRACT` (no contract declared for the `--source`), `MISSING_INPUT` (no `--input` supplied), or `NETWORK_INPUT_NOT_ALLOWED` (an `--input` pointed at a network location instead of a local file). |
-| 3 | `EXIT_INPUT_UNAVAILABLE` | The declared input could not be read (missing file, unreadable file, or a glob that matched nothing).
+| 3 | `EXIT_INPUT_UNAVAILABLE` | The declared input could not be read (missing file, unreadable file, or a glob that matched nothing). |
 | 4 | `EXIT_TEST_INPUT` | No blocking check failed, but `--input` is not the `--load-input` the loader reads, so this was a test run. The task fails so the loader can't load files this run didn't check (#159). A test input that is BLOCKED exits 1 as usual. |
 
 ## In the Databricks job (#148)
 
-The job runs the gate once per contracted source, right after control setup and before that source's Bronze loader:
+The job runs the gate once per contracted source, immediately after Control
+setup and before that source's Bronze loader. This Green Taxi example uses the
+same interface as the Taxi Zones and Weather tasks:
 
 ```
 --source green_taxi --input {{job.parameters.green_taxi_input}} --load-input /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet --evidence /tmp/source_gate_green_taxi.json --record-control --code-revision {{job.parameters.code_revision}}
@@ -54,4 +59,4 @@ With `--record-control`, the gate appends one row per check to `ftw-week-08`.`01
 | `code_revision` | `--code-revision`, or `UNSET` when empty (D25) |
 | `batch_id`, `source_version_id` | `NULL`: the gate runs before Bronze creates a batch or version |
 | `evidence_location` | the input paths the gate read |
-| `owner` | `Ina Magno`, like the SQL gates, until #126 |
+| `owner` | The value currently emitted by `control_rows()`; change ownership in implementation and documentation together |

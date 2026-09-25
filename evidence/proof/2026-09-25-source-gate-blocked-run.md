@@ -216,7 +216,7 @@ That line repeats every few seconds until the cancel, the task shows no queries,
 - **Retries on the gate tasks.** Set `max_retries: 0` on the source-gate tasks, so a BLOCK verdict is recorded once. Separate issue.
 - **A timeout on the gate tasks.** Three runs hung on the Spark service staying Pending (see "Two attempts that hung first"). A timeout would fail them in minutes instead of leaving them running. Separate issue.
 - **Recording without Spark.** The gate only needs Spark to write its rows. Writing them through the SQL warehouse instead would remove the dependency that hung. Separate issue.
-- **Repair and overrides.** Noted in `docs/job_setup.md`: to repeat a test, start a new run with the override.
+- **Repair and overrides.** Noted in `docs/operations/job-setup.md`: to repeat a test, start a new run with the override.
 - **The shell quoting** for `--params` is fixed in `966adec`. Unquoted, zsh expands the `*` and stops with `no matches found` before the job starts, which is what happened on the first try.
 
 ## What this proves

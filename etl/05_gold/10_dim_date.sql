@@ -4,7 +4,7 @@
 --
 -- SCD: Type 0 / full rebuild.
 --
--- Deterministic rebuild per D12 and data_model.md.
+-- Deterministic rebuild per D12 and docs/architecture/data-model.md.
 -- The dimension must cover:
 --   1. The approved reporting window (2026-03-01 through 2026-05-31)
 --   2. Every retained observed trip date

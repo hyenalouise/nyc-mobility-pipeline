@@ -167,7 +167,7 @@ source file. The same file pins the gate's WMO codes and temperature range to
 the Bronze and Silver weather gates, and its `requested_window` to the Bronze
 loader.
 
-See `docs/duckdb/validation_checks.md` for the full check catalogue.
+See `docs/tools/duckdb/validation-checks.md` for the full check catalogue.
 
 ## Taxi Zones ingestion
 
@@ -235,7 +235,7 @@ Both a clean snapshot and each defect case (duplicate `LocationID`, blank
 `tests/test_taxi_zones_gate.py`, which generates its own test data rather
 than relying on a committed source file.
 
-See `docs/duckdb/validation_checks.md` for the full check catalogue. The
+See `docs/tools/duckdb/validation-checks.md` for the full check catalogue. The
 severity model and command line are shared across sources; the individual
 checks are not, since each source's business rules differ -- see that file
 for each source's specific list.
@@ -265,7 +265,6 @@ Download to staging; check status, completeness, parsability and contract; prese
 On critical schema/quality failure retain diagnostic evidence, mark the attempt failed, leave the previous good published result intact, and stop dependent layers. Resume from the failed layer. Persist warnings with explanations. Surface new columns, missing fields, type changes and structure changes rather than silently coercing them.
 
 Discovery follows arrival/source versions, not maximum event time. Late records remain eligible even if their event month is older. A revised source batch can affect multiple event-date aggregates; recompute every affected downstream contribution and preserve unaffected data.
-
 ## Recovery runbook
 
 This section answers the questions a developer needs when the pipeline
@@ -285,8 +284,8 @@ wrong one leads to the wrong recovery action:
   a corrected configuration, a restored default). This is the normal
   recovery action once the actual problem is addressed.
 - **Backfill** — process a historical period that was missed entirely,
-  separate from retrying or rerunning the most recent attempt. 
-  
+  separate from retrying or rerunning the most recent attempt.
+
 Backfill in this pipeline is a normal run after one deliberate change:
 widening the period the pipeline expects. For Green Taxi, the loader
 already discovers every file in its landing folder and loads any file
@@ -399,7 +398,7 @@ confirm the rerun did not duplicate anything.
   credential or approval is needed, and it cannot affect anyone else's
   sandbox or the shared landing folder.
 - Deploying to `prod` and approving a production deployment currently sit
-  with the role documented in `docs/governance.md`'s Deployment Access
+  with the role documented in `docs/governance/ownership.md`'s Deployment Access
   table. Nothing in this runbook requires prod access: every step here can
   be demonstrated safely in `dev`.
 - Querying `data_quality_results`, `ingestion_batches`, or any Bronze or

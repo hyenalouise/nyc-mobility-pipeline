@@ -7,9 +7,9 @@
 -- Built from the approved WMO weather-code mapping and
 -- precipitation-band rules documented in:
 --
---   - docs/data_model.md
---   - docs/data_dictionary.md
---   - docs/source_to_target_mapping.md
+--   - docs/architecture/data-model.md
+--   - docs/architecture/data-dictionary.md
+--   - docs/architecture/source-to-target.md
 --
 -- Deterministic rebuild per D12.
 --

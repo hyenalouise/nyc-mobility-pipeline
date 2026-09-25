@@ -83,7 +83,13 @@ nothing meaningful to show otherwise.
 
 ## Source gates before Bronze (#148)
 
-All three sources are checked before they are loaded; Open-Meteo's gate was added with its contract (#125, #152). Each source-gate task runs the DuckDB gate on that source's files in the Volume, records one row per check in `data_quality_results` under layer `source`, and exits 1 if the delivery is BLOCKED. The task then fails, so that source's loader and everything after it are skipped while the other sources carry on (D17).
+Green Taxi, Taxi Zones, and Open-Meteo are checked before they are loaded;
+Open-Meteo's gate was added with its contract in #125 and #152. Each source-gate
+task runs the DuckDB gate against that source's configured input, records one
+row per check in `data_quality_results` under layer `source`, and exits nonzero
+when the delivery must not advance. The task then fails, so that source's loader
+and dependent tasks are skipped while independent source lanes may continue
+(D17).
 
 Each loader waits only for its own source's gate, so a BLOCKED Green Taxi delivery stops Green Taxi and nothing else. Task names are the task keys in `databricks.yml`:
 

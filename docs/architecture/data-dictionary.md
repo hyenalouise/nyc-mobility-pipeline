@@ -228,4 +228,4 @@ For Q2, all measures are grouped by the weather classification matched at pickup
 
 ## Maintenance rule
 
-Any pull request that adds, renames, casts, derives, drops, reinterprets, or reroutes a field must update this dictionary and `docs/source_to_target_mapping.md` in the same change. Changes to a Gold table, grain, key, or relationship must also update `docs/data_model.md`, `docs/decisions.md`, the DBML source, and the exported model diagram.
+Any pull request that adds, renames, casts, derives, drops, reinterprets, or reroutes a field must update this dictionary and `docs/architecture/source-to-target.md` in the same change. Changes to a Gold table, grain, key, or relationship must also update `docs/architecture/data-model.md`, `docs/governance/decisions.md`, the DBML source, and the exported model diagram.

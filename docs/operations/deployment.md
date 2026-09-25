@@ -83,5 +83,5 @@ failing deep inside a Databricks CLI error.
 This workflow deploys the bundle (`databricks bundle deploy`), which
 updates the job definition. It does not run the pipeline -- that's a
 separate action (`databricks bundle run`, or the Jobs UI), same as it was
-before this issue. See `docs/workflow.md` Part 4 for running a deployed job
-and checking what landed.
+before this issue. See [Workflow](workflow.md) for running a deployed job and
+checking what landed.

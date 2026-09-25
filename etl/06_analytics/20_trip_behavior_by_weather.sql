@@ -8,7 +8,7 @@
 -- Source:    Gold only.
 --
 -- ASSOCIATION, NOT CAUSATION, and the weather series is one citywide
--- coordinate rather than a reading per zone (docs/data_model.md).
+-- coordinate rather than a reading per zone (docs/architecture/data-model.md).
 --
 -- Two things decide whether this answer is honest:
 --

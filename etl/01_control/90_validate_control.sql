@@ -5,7 +5,7 @@
 -- Runs after: etl/01_control/00_create_control_tables.sql
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract)
+-- Contract:  docs/data/validation.md (shared result contract)
 --
 -- Validates the control tables themselves. Bronze loads read
 -- ingestion_batches to decide what to skip, so a corrupt control table

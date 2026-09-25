@@ -19,7 +19,7 @@ Recorded trip count is a proxy for demand. Weather comparisons describe associat
 
 Q4 is not a Gold implementation requirement while it remains deferred. This model contains no traffic fact, disruption dimension, bridge, or trip-to-advisory relationship.
 
-## Assumptions requiring validation
+## Assumptions and interpretation limits
 
 - Reporting timezone is `America/New_York`.
 - Weather is attributed using the trip pickup hour.
@@ -34,8 +34,11 @@ Q4 is not a Gold implementation requirement while it remains deferred. This mode
 - Weather-code and precipitation-band mappings are documented before transformation.
 - Fare, duration, and distance validity rules are based on profiling.
 - Invalid values remain traceable through quality flags or quarantine records.
-- March–May 2026 files must contain the expected fields and usable date coverage.
-- Source fields and coverage remain unverified until profiling is complete.
+- March–May 2026 files must contain the expected fields and usable date coverage;
+  source and layer gates enforce the current contract.
+- The observed source structure and coverage are recorded in
+  [`source profile`](../data/source-profile.md); a future source delivery is accepted only after its gate
+  checks the applicable contract.
 
 ## Model overview
 The Gold model uses two fact tables because taxi trips and hourly weather observations have different grains.

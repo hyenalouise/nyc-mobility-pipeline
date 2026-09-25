@@ -1,8 +1,14 @@
-This document defines the evidence required to prove every pipeline layer is complete, repeatable, and trustworthy.
-
 # Validation and proof
 
-Status: Bronze and Silver checks have been run for Green Taxi (see the proof table below). Weather and Taxi Zones gates are in progress. A result is accepted only when its evidence is recorded.
+This document defines the current gate contract and the evidence required to
+show that every pipeline layer is repeatable and trustworthy.
+
+Current Main implements source, Bronze, and Silver gates for Green Taxi,
+Open-Meteo Weather, and Taxi Zones, followed by combined Integration, Gold,
+Analytics, and Control gates. Committed proof covers the end-to-end run,
+incremental loading, idempotency, failure/restart, DuckDB reconciliation, and a
+blocked pre-Bronze delivery. A result is accepted only when its evidence is
+recorded with the applicable run and code revision.
 
 ## Gates per source (D17)
 
@@ -23,7 +29,7 @@ Bronze and Silver are validated **per source**, not once per layer. Each source 
 |---|---|
 | Bronze `green_taxi` load | Source `green_taxi` |
 | Bronze `taxi_zones` load | Source `taxi_zones` |
-| Bronze `open_mateo` load | Source `weather` |
+| Bronze `open_meteo` load | Source `weather` |
 | Silver `green_taxi` | Bronze `green_taxi` |
 | Silver `weather_hourly` | Bronze `open_meteo` |
 | Silver `taxi_zones` | Bronze `taxi_zones` |

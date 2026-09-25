@@ -2,6 +2,12 @@
 
 This document is the canonical record of important product, data, and engineering decisions for the NYC Mobility Pipeline. It records what was decided, why it was chosen, which alternatives were rejected, what assumptions remain, and what consequences follow.
 
+Decision entries preserve the context that existed when the decision was made.
+Their original “reason” and “consequences” sections are historical, not a
+current deployment-status page. When later implementation changes an outcome,
+add a dated subsequent-outcome note and use repository configuration plus
+run-specific evidence for current claims.
+
 **Last updated:** 2026-09-24
 **Decision priority:** correctness > reliability > maintainability > scalability > observability > efficiency
 
@@ -11,13 +17,13 @@ When a decision changes, update this file and every affected canonical document 
 
 This log explains why choices were made. Detailed implementation contracts live in:
 
-- `docs/architecture.md`
-- `docs/ingestion.md`
-- `docs/data_model.md`
-- `docs/data_dictionary.md`
-- `docs/source_to_target_mapping.md`
-- `docs/naming_conventions.md`
-- `docs/model/nyc_mobility_star_schema.png`
+- `docs/architecture/overview.md`
+- `docs/data/ingestion.md`
+- `docs/architecture/data-model.md`
+- `docs/architecture/data-dictionary.md`
+- `docs/architecture/source-to-target.md`
+- `docs/standards/naming.md`
+- `docs/architecture/model/nyc_mobility_star_schema.png`
 
 ## Decision register
 
@@ -398,7 +404,7 @@ A dedicated `04-integration` schema requires a new decision if integration begin
 **Decision date:** 2026-09-17
 
 Implement Issue #19 as the `ingestion_batches` control table only, per the
-approved name in `naming_conventions.md`. `pipeline_runs` (per-layer
+approved name in `docs/standards/naming.md`. `pipeline_runs` (per-layer
 execution tracking) is deferred to a separate future issue.
 
 **Reason:** The issue's stated outcome — "the pipeline can answer 'have we
@@ -412,7 +418,7 @@ and deduplication work (Issue #14) was exploratory and is not treated as
 official Bronze ingestion.
 
 **Table grain:** One row per external source batch or source version, per
-`naming_conventions.md`'s Control-table grains section.
+`docs/standards/naming.md`'s Control-table grains section.
 
 **Lifecycle:** `DISCOVERED` → `STARTED` → `SUCCESS` / `FAILED`. Status
 advances to `SUCCESS` only after the load lands and passes validation (for
@@ -541,11 +547,11 @@ Classification logic is handled separately through zone_classification.
    validation file each, because they combine sources.
 2. A source may advance from Bronze to Silver when its own gate passes.
    Integration requires the Silver gates of Green Taxi, weather and Taxi Zones.
-3. All gates share one result contract, defined in `docs/validation.md`: one
+3. All gates share one result contract, defined in `docs/data/validation.md`: one
    `01-control`.`data_quality_results` table, percentage units, one status rule,
    and lineage fields.
 4. `etl/00_source_profile/` is removed. Source profiling lives in `notebooks/`
-   and is recorded in `docs/source_profile.md`. The README repository structure
+   and is recorded in `docs/data/source-profile.md`. The README repository structure
    is the reference layout.
 
 **Reason:**
@@ -558,7 +564,7 @@ Classification logic is handled separately through zone_classification.
   weather and Taxi Zones ingestion are still in progress; one layer gate would
   block Green Taxi on unrelated work.
 - The profiling folder duplicated the profiling notebooks and
-  `docs/source_profile.md`.
+  `docs/data/source-profile.md`.
 - Without a shared result contract, per-source notebooks had already diverged:
   different status rules, fractional thresholds compared with percentage
   failure rates, and separate results tables in Bronze with names starting with
@@ -597,7 +603,7 @@ Classification logic is handled separately through zone_classification.
   `01-control`.`data_quality_results` instead.
 - The Silver weather table was built before a Bronze weather gate existed; it
   must be revalidated once that gate passes.
-- `docs/naming_conventions.md` and `etl/README.md` now point to `etl/`, not
+- `docs/standards/naming.md` and `etl/README.md` now point to `etl/`, not
   `sql/`, and no longer list `00_source_profile/`.
 
 
@@ -1123,6 +1129,15 @@ it.
 - 06:00 is New York local time, so the run moves by an hour in UTC terms when
   daylight saving changes. The local time stays the same.
 
+**Subsequent repository outcome, 2026-09-25:**
+
+The bundle now declares all three dashboard resources and their job tasks, and
+the contract tests cover those references. The earlier statements that every
+run would fail on dashboard tasks and that production was waiting on #122
+describe the state when D27 was accepted; they are not current implementation
+status. Live production deployment and run state must still be verified in
+Databricks.
+
 
 ## Source gate decision
 
@@ -1192,7 +1207,7 @@ and were left unchanged here:
   condition as `dropoff_before_pickup_flag`.
 - `passenger_count_gt_8`: `WARN` at 0.1%, currently 0.0097%.
 
-Whether they follow the same rule is a separate decision, tracked in #153 together with a wording fix in `docs/validation.md`, which calls INFO checks "measurements with a tolerance" although every INFO check records `threshold_pct` as NULL.
+Whether they follow the same rule is a separate decision, tracked in #153 together with a wording fix in `docs/data/validation.md`, which calls INFO checks "measurements with a tolerance" although every INFO check records `threshold_pct` as NULL.
 
 Resolved in D29.
 
@@ -1200,7 +1215,7 @@ Resolved in D29.
 
 - `evidence/proof/source-validation/results.json` must be regenerated from
   the current code against the Volume paths.
-- `docs/duckdb/validation_checks.md` and `docs/duckdb/evidence.md` are updated
+- `docs/tools/duckdb/validation-checks.md` and `docs/tools/duckdb/evidence.md` are updated
   in the same pull request.
 - `evidence/proof/2026-09-23-bronze-duckdb-reconciliation.md` still records
   the 15-check run of Issue #115. It is left unchanged as a record of that run.
@@ -1221,7 +1236,7 @@ The three checks D28 left open for review:
 | `dropoff_after_pickup` | `WARN` at 0.1%, counting dropoff at **or** before pickup | Split into `dropoff_before_pickup`, `WARN` at 0.1%, and `zero_length_trip`, `INFO` |
 | `passenger_count_gt_8` | `WARN` at 0.1% | `WARN` at 0.1%, unchanged |
 
-The dropoff split applies to both the source gate (`src/ingestion/source_gate.py`) and the Bronze SQL gate (`etl/02_bronze/90_validate_green_taxi.sql`). `docs/validation.md` now says INFO checks have no threshold.
+The dropoff split applies to both the source gate (`src/ingestion/source_gate.py`) and the Bronze SQL gate (`etl/02_bronze/90_validate_green_taxi.sql`). `docs/data/validation.md` now says INFO checks have no threshold.
 
 **Reason:**
 
@@ -1255,5 +1270,5 @@ DuckDB 1.4.5 was used only for the exploratory local decision analysis above. Th
 - The source gate runs 17 Green Taxi checks. `data_quality_results` rows written before this change keep the name `dropoff_after_pickup`; runs after it write `dropoff_before_pickup` and `zero_length_trip`.
 - CI's bad-delivery step is unchanged, since `trip_distance_non_negative` still blocks.
 - `negative_distance_flag` in Silver stays defensive: with both gates blocking, a negative distance never reaches Silver.
-- `evidence/proof/source-validation/results.json` and `docs/duckdb/evidence.md` are regenerated from the Volume in the same pull request.
+- `evidence/proof/source-validation/results.json` and `docs/tools/duckdb/evidence.md` are regenerated from the Volume in the same pull request.
 - D28's "Open for review" list is resolved here.

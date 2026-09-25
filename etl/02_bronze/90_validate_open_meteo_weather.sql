@@ -5,7 +5,7 @@
 -- Runs after: etl/02_bronze/20_load_open_meteo.sql
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract, D17)
+-- Contract:  docs/data/validation.md (shared result contract, D17)
 --
 -- Two families of check in one gate: response-level (the landed API
 -- response, its metadata and array shape) and observation-level (the

@@ -54,7 +54,8 @@ guess which schema a folder writes to.
 | 06 | Analytics: one dataset per business question | `etl/06_analytics/` | `ftw-week-08`.`06-analytics` |
 
 What each stage is responsible for is defined in
-[architecture.md](architecture.md). This document only fixes the names.
+[architecture overview](../architecture/overview.md). This document only fixes
+the names.
 
 A stage number identifies the pipeline stage and, where that stage persists
 tables, the corresponding Unity Catalog schema. Stage 00 contains source files

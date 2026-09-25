@@ -4,6 +4,10 @@
 
 This document defines the governance model for the NYC Mobility Pipeline.
 
+It describes repository ownership and intended controls. Live deployment,
+permission, schedule, and run state must be verified in Databricks rather than
+inferred from a statement in this document.
+
 Its purpose is to ensure that someone outside the project team can:
 
 - Find the data product.
@@ -16,16 +20,16 @@ Its purpose is to ensure that someone outside the project team can:
 
 This document complements:
 
-- [Naming Conventions](naming_conventions.md)
-- [Architecture](architecture.md)
-- [Job Setup](job_setup.md)
-- [Validation](validation.md)
-- [DuckDB-Source Gate](duckdb/source_gate.md)
+- [Naming Conventions](../standards/naming.md)
+- [Architecture](../architecture/overview.md)
+- [Job Setup](../operations/job-setup.md)
+- [Validation](../data/validation.md)
+- [DuckDB-Source Gate](../tools/duckdb/source-gate.md)
 - [Decisions](decisions.md)
 
 ---
 
-# Data Product Overview
+## Data Product Overview
 
 The NYC Mobility Pipeline processes transportation and weather datasets and produces curated analytical datasets for reporting and analysis.
 
@@ -67,9 +71,9 @@ and data-quality results.
 
 ---
 
-# Ownership
+## Ownership
 
-## Ownership Matrix
+### Ownership Matrix
 
 | Area | Owner | Contact |
 |--------|--------|--------|
@@ -84,9 +88,9 @@ and data-quality results.
 | Deployment Execution | Gabrielle Torres | gabrielle.torres@ftwfoundation.org |
 | Production Deployment Approval | Gabrielle Torres | gabrielle.torres@ftwfoundation.org |
 
-## Responsibilities
+### Responsibilities
 
-### Pipeline Owner
+#### Pipeline Owner
 
 Responsible for:
 
@@ -95,7 +99,7 @@ Responsible for:
 - Governance approval
 - Architecture decisions
 
-### Source Owners
+#### Source Owners
 
 Responsible for:
 
@@ -104,7 +108,7 @@ Responsible for:
 - Data-quality expectations
 - Source documentation
 
-### Platform Owner
+#### Platform Owner
 
 Responsible for:
 
@@ -113,7 +117,7 @@ Responsible for:
 - Operational platform configuration
 - Workspace administration
 
-### Data Quality Owner
+#### Data Quality Owner
 
 Responsible for:
 
@@ -122,7 +126,7 @@ Responsible for:
 - Control-table quality reporting
 - Quality-related governance decisions
 
-### Deployment Owner
+#### Deployment Owner
 
 Responsible for:
 
@@ -132,9 +136,9 @@ Responsible for:
 
 ---
 
-# Access and Permissions
+## Access and Permissions
 
-## Governance Principle
+### Governance Principle
 
 Least privilege is the target access model, but the current course environment does not yet fully implement that principle.
 
@@ -149,9 +153,9 @@ At the time of writing:
 
 These permissions originate from the course environment rather than a project-designed least-privilege model. The grants and deployment controls must be reviewed before production operation.
 
-## Current Access Model
+### Current Access Model
 
-### Data Access
+#### Data Access
 
 | Capability | Current access |
 |---|---|
@@ -160,7 +164,7 @@ These permissions originate from the course environment rather than a project-de
 | Inspect membership of `ftw-week-09` | Not available from the project workspace |
 | Administer the Databricks workspace | Crystal Manas |
 
-### Repository Access
+#### Repository Access
 
 The five project members are GitHub collaborators with write access:
 
@@ -172,7 +176,7 @@ The five project members are GitHub collaborators with write access:
 
 Pull requests normally name a reviewer and are merged after review and successful CI checks. However, `main` currently has no branch-protection rule, so review and approval are team conventions rather than technically enforced controls.
 
-## Read Access
+### Read Access
 
 Read access is intended for approved users requiring access to:
 
@@ -181,7 +185,7 @@ Read access is intended for approved users requiring access to:
 - Reports
 - Analytics outputs
 
-## Write Access
+### Write Access
 
 Write access is restricted to project contributors responsible for maintaining:
 
@@ -190,26 +194,30 @@ Write access is restricted to project contributors responsible for maintaining:
 - Data models
 - Documentation
 
-## Deployment Access
+### Deployment Access
 
 | Environment | Current capability | Governance owner |
 |---|---|---|
 | Development | Any project contributor with Databricks workspace access and the Databricks CLI can deploy a personal `[dev]` job | Gabrielle Torres |
-| Production | No production job has been deployed at the time of writing | Gabrielle Torres |
+| Production | The repository defines a shared `prod` bundle target; the deployed revision and live job state must be verified in Databricks | Gabrielle Torres |
 | Production approval | Production deployment approval is assigned to Gabrielle Torres, but the technical approval control is not yet implemented | Gabrielle Torres |
 
-Three development jobs currently exist. Development deployments are separated through the bundle’s development job naming and workspace paths.
+Development deployments are separated through the bundle's development job
+naming and workspace paths. The repository does not maintain a reliable count
+of currently deployed personal development jobs.
 
-The planned production bundle folder is `/Workspace/Shared`. Because workspace users can write to that location in the current environment, production deployment is not yet protected by least-privilege access controls.
-## Future Ownership Expansion
+The production bundle folder is configured under `/Workspace/Shared`. Because
+workspace users can write to that location in the course environment,
+production deployment is not protected by least-privilege access controls.
+### Future Ownership Expansion
 
 Briana Capul owns the overall data-quality framework. [Issue #126](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/126) separately tracks assignment of named owners to individual data-quality checks.
 
 ---
 
-# Data Product Inventory
+## Data Product Inventory
 
-## Source Layer
+### Source Layer
 
 Source Volume:
 
@@ -227,7 +235,7 @@ Sources:
 
 ---
 
-## Control Layer
+### Control Layer
 
 Location:
 
@@ -252,7 +260,7 @@ Functions:
 
 ---
 
-## Bronze Layer
+### Bronze Layer
 
 Location:
 
@@ -276,7 +284,7 @@ Purpose:
 
 ---
 
-## Silver Layer
+### Silver Layer
 
 Location:
 
@@ -301,7 +309,7 @@ Purpose:
 
 ---
 
-## Integration Layer
+### Integration Layer
 
 Location:
 
@@ -323,7 +331,7 @@ Purpose:
 
 ---
 
-## Gold Layer
+### Gold Layer
 
 Location:
 
@@ -349,7 +357,7 @@ Purpose:
 
 ---
 
-## Analytics Layer
+### Analytics Layer
 
 Location:
 
@@ -374,9 +382,9 @@ Purpose:
 
 ---
 
-# Data Lineage
+## Data Lineage
 
-## Green Taxi Lineage
+### Green Taxi Lineage
 
 ```text
 Green Taxi source files
@@ -395,7 +403,7 @@ trip_behavior_by_weather
 trip_weather_coverage
 ```
 
-## Taxi Zones Lineage
+### Taxi Zones Lineage
 
 ```text
 Taxi Zone lookup
@@ -407,7 +415,7 @@ taxi_zones_clean
 └──→ dim_taxi_zone
 ```
 
-## Weather Lineage
+### Weather Lineage
 
 ```text
 Open-Meteo weather source
@@ -421,9 +429,9 @@ weather_hourly
 
 ---
 
-# Traceability
+## Traceability
 
-## Lineage Fields
+### Lineage Fields
 
 | Field | Purpose |
 |---|---|
@@ -434,7 +442,7 @@ weather_hourly
 | `code_revision` | Identifies the deployed Git revision used by the run |
 | `evidence_location` | Records the source path or evidence artifact associated with a validation result |
 
-## Lineage and Evidence Stores
+### Lineage and Evidence Stores
 
 | Object | Purpose |
 |---|---|
@@ -467,35 +475,43 @@ Pipeline run
 Code revision
 ```
 
-Since [Issue #148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148), the DuckDB source gates execute before the Green Taxi and Taxi Zones Bronze loaders, and since [Issue #125](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/125) before the Open-Meteo loader too.
+Since [Issue #148](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/148),
+the DuckDB source gates execute before the Green Taxi and Taxi Zones Bronze
+loaders, and since
+[Issue #125](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/125),
+before the Open-Meteo loader too.
 
 Each source-gate check writes a row to `data_quality_results` with `layer = 'source'`. This makes source validation visible alongside Bronze, Silver, Integration, Gold, and Analytics validation results.
 
 Source-gate rows do not yet have a Bronze `batch_id` or `source_version_id`, because the source gate runs before Bronze creates those values. The source path is recorded in `evidence_location` instead.
 
 ---
-# Update Frequency
+## Update Frequency
 
-## Current Operating Model
+### Current Operating Model
 
 | Environment | Current state | Schedule |
 |---|---|---|
-| Development | Runs are manually initiated | The development schedule is paused by design under D27 |
-| Production | No production job has been deployed and no production runs have occurred | Once deployed, the planned schedule is weekly on Monday at 06:00 `America/New_York` |
+| Development | Personal bundle target; deployed state varies by contributor | Paused by configuration |
+| Production | Shared bundle target; verify deployed revision and latest run in Databricks | Configured weekly on Monday at 06:00 `America/New_York` |
 
-Nineteen observed runs across the three development jobs were reviewed when this document was prepared. Every observed run was initiated manually.
+Historical run counts belong in run-specific evidence, not in this living
+governance document.
 
-## Deployments
+### Deployments
 
 Deployments use the Databricks Asset Bundle and record the deployed Git revision through `code_revision` for auditability and reproducibility.
 
-Development deployment is currently available to project contributors with Databricks workspace and CLI access. Production deployment has not yet been implemented.
+Development and production targets are implemented in `databricks.yml`.
+Deploying either target requires the appropriate workspace and CLI access.
+Repository configuration does not prove that the latest commit has been
+deployed.
 
 ---
 
-# Data Quality Governance
+## Data Quality Governance
 
-## Objective
+### Objective
 
 Data quality controls exist to ensure:
 
@@ -507,9 +523,9 @@ Data quality controls exist to ensure:
 
 ---
 
-## Non-Negotiable Controls
+### Non-Negotiable Controls
 
-### Source Must Not Be Empty
+#### Source Must Not Be Empty
 
 Reason:
 
@@ -517,7 +533,7 @@ Empty deliveries must not proceed into Bronze.
 
 ---
 
-### Contract Compliance
+#### Contract Compliance
 
 Reason:
 
@@ -525,7 +541,7 @@ Sources must match approved source contracts.
 
 ---
 
-### Required Columns Must Exist
+#### Required Columns Must Exist
 
 Reason:
 
@@ -533,13 +549,13 @@ Schema compatibility is required throughout the pipeline.
 
 ---
 
-### Source Reconciliation
+#### Source Reconciliation
 
 Reason:
 
 Loaded data must reconcile against source files and expected totals.
 
-### Duplicate Collision Quarantine
+#### Duplicate Collision Quarantine
 
 Rule:
 
@@ -562,7 +578,7 @@ Reference:
 [D10](decisions.md#d10)
 ---
 
-### Trip Distance Validity
+#### Trip Distance Validity
 
 Rule:
 
@@ -582,7 +598,7 @@ BLOCK
 
 ---
 
-### Fare Amount Monitoring
+#### Fare Amount Monitoring
 
 Rule:
 
@@ -608,7 +624,7 @@ Reference:
 
 ---
 
-### Data Quality Reporting
+#### Data Quality Reporting
 
 Reason:
 
@@ -619,7 +635,7 @@ Validation results are recorded in:
 ```text
 data_quality_results
 ```
-## Open Data-Quality Governance Decisions
+### Open Data-Quality Governance Decisions
 
 [Issue #153](https://github.com/hyenalouise/nyc-mobility-pipeline/issues/153) reviews whether additional source-gate checks should remain blocking.
 
@@ -630,14 +646,13 @@ At the time of writing:
 - Other source-gate severities must follow the current approved implementation until a later decision is accepted.
 ---
 
-# Key Governance Decisions
+## Key Governance Decisions
 
 The following decisions directly affect this data product:
 
 | Decision | Purpose |
 |---|---|
 | [D10](decisions.md#d10) | Duplicate collisions are kept outside clean data through quarantine |
-| [D15](decisions.md#d15) | Quarantine only duplicate decisions
 | [D15](decisions.md#d15) | Retention and flagging of negative fares |
 | [D17](decisions.md#d17) | Source-level independence between pipeline branches |
 | [D25](decisions.md#d25) | Recording deployed code revisions |
@@ -646,13 +661,13 @@ The following decisions directly affect this data product:
 
 ---
 
-# Dependency Map
+## Dependency Map
 
 The Data Lineage section above documents the principal source-to-output dependencies.
 
 The authoritative task-level execution order is maintained in:
 
-- `job_setup.md`
+- `docs/operations/job-setup.md`
 - `databricks.yml`
 
 The authoritative table transformation logic is maintained in:
@@ -663,7 +678,7 @@ Changes to dependency relationships must update the implementation and this docu
 
 ---
 
-# Governance Maintenance
+## Governance Maintenance
 
 This document must be updated whenever any of the following change:
 
@@ -681,7 +696,7 @@ Governance information must not exist only in conversations, pull requests, or i
 
 ---
 
-# Governance Questions Answered
+## Governance Questions Answered
 
 This document enables a reviewer, operator, or new contributor to answer:
 
@@ -708,7 +723,7 @@ Document owner: Ina Magno
 Governance maintainer: Briana Capul  
 Last reviewed: 2026-09-24  
 
-# Related Issues
+## Related Issues
 
 | Issue | Governance relevance |
 |---|---|

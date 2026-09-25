@@ -5,7 +5,7 @@
 --
 -- Explodes Bronze's response-grain hourly arrays into one row per hour,
 -- converts UTC -> America/New_York (DST-aware, decision D09), and maps
--- weather_code to source_to_target_mapping.md's WMO category list.
+-- weather_code to docs/architecture/source-to-target.md's WMO category list.
 --
 -- Excluded on purpose: weather_classification_key / observation_date_key /
 -- observation_hour_key (Gold-layer, depend on dimension tables not built
@@ -97,7 +97,7 @@ USING (
         CAST(hourly_row.hourly_precipitation AS DECIMAL(10,3)) AS precipitation_mm,
         CAST(hourly_row.hourly_weather_code AS INT) AS weather_code,
 
-        -- WMO grouping per source_to_target_mapping.md; unmapped codes fall
+        -- WMO grouping per docs/architecture/source-to-target.md; unmapped codes fall
         -- through to 'unknown_code' (see 90_validate.sql check 4b).
         CASE
             WHEN hourly_row.hourly_weather_code IS NULL THEN NULL

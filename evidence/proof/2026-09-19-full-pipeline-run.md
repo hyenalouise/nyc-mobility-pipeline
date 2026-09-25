@@ -21,7 +21,7 @@ No task was repaired, skipped or re-run.
 ## Execution order
 
 The job ran the order defined in `databricks.yml`, which is the same order
-`docs/job_setup.md` describes. Dependencies enforce it: a gate that fails its
+`docs/operations/job-setup.md` describes. Dependencies enforce it: a gate that fails its
 task blocks everything after it.
 
 ```

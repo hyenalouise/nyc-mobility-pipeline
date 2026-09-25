@@ -246,7 +246,7 @@ Actual hourly rows returned: **2,208**. Gap: **0**. Full hourly coverage confirm
 The duplicate-timestamp query (`GROUP BY time HAVING COUNT(*) > 1`) returned **0 rows**:
 
 - No duplicate `time` values were detected across the 2,208-row window.
-- `time` is suitable as the key for the `fact_weather_hourly` grain (per `docs/data_model.md`).
+- `time` is suitable as the key for the `fact_weather_hourly` grain (per `docs/architecture/data-model.md`).
 
 ### Null Analysis
 

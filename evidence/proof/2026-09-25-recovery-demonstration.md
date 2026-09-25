@@ -13,7 +13,7 @@ the same failed task once, and it failed identically. A rerun with the
 default (real) inputs then succeeded on all 33 tasks with the same before
 counts, confirming the rerun was a safe no-op rather than a duplicate load.
 
-This exercises the full loop the runbook in `docs/ingestion.md` describes:
+This exercises the full loop the runbook in `docs/data/ingestion.md` describes:
 
 ```text
 Detect → Diagnose → Assess impact → Fix → Rerun → Verify
@@ -174,7 +174,7 @@ outcome for a rerun against unchanged real files.
   deliberately avoids. Backfilling an older month also requires widening
   the declared reporting window in both the source gate's contract and
   the Bronze validation gate first (see the runbook in
-  `docs/ingestion.md`), since both currently block anything outside
+  `docs/data/ingestion.md`), since both currently block anything outside
   March–May 2026. This demonstration exercises Retry and Rerun only.
 - **`prod` was not used.** Only the `dev` job: a personal sandbox is the
 safe place to force a failure on purpose.

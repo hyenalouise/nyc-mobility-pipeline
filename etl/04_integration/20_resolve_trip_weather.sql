@@ -5,7 +5,7 @@
 -- Runs after: etl/04_integration/10_resolve_trip_zones.sql
 -- Target:    `ftw-week-08`.`04-integration`.trip_weather_map
 -- Grain:     one row per accepted trip, unchanged from Silver
--- Contract:  docs/data_model.md, docs/source_to_target_mapping.md
+-- Contract:  docs/architecture/data-model.md, docs/architecture/source-to-target.md
 --
 -- Carries only the weather OBSERVATION key. Temperature and precipitation
 -- stay on fact_weather_hourly (D12); Gold copies the classification key

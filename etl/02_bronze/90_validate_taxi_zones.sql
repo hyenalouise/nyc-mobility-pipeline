@@ -5,7 +5,7 @@
 -- Runs after: etl/02_bronze/30_load_taxi_zones.sql
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract, D17)
+-- Contract:  docs/data/validation.md (shared result contract, D17)
 --
 -- Replaces the results table `02-bronze`.90_validate_taxi_zones, which
 -- began with a digit (D13) and sat in a business schema. Silver

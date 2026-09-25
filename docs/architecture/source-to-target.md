@@ -198,5 +198,5 @@ The owner of any layer-changing PR must update this mapping in the same PR when 
 - Validate every proposed numeric cast against the persisted Parquet and JSON schemas before creating Silver and Gold tables.
 - Implement and test every WMO, precipitation-band, Taxi Zone, measure-eligibility, and match-status rule exactly as documented.
 - Reconcile row counts, unmatched keys, join cardinality, and same-input rerun behavior before publishing each Gold table.
-- If a classification band or implementation field changes, update this file, `docs/data_model.md`, `docs/data_dictionary.md`, `docs/decisions.md`, the DBML source, and the exported diagram together.
+- If a classification band or implementation field changes, update this file, `docs/architecture/data-model.md`, `docs/architecture/data-dictionary.md`, `docs/governance/decisions.md`, the DBML source, and the exported diagram together.
 ```
