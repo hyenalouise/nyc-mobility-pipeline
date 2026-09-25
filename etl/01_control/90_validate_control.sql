@@ -230,7 +230,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    'Ina Magno',
     NULL,
     CONCAT('stuck threshold (hours): ', CAST(stuck_after_hours AS STRING))
 FROM (
