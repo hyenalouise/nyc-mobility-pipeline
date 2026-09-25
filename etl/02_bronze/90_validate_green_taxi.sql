@@ -338,7 +338,7 @@ SELECT
     NULL,                 -- batch_id: this gate checks the table as a whole
     NULL,                 -- source_version_id: same
     code_revision,
-    'TODO',               -- owner
+    'Briana Capul',               -- owner
     NULL,                 -- evidence_location
     details
 FROM checks;

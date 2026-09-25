@@ -462,7 +462,7 @@ SELECT
     (SELECT MAX(batch_id) FROM bronze),
     (SELECT MAX(source_response_version) FROM bronze),
     code_revision,
-    'TODO',
+    'Hazelle Cuevas',
     NULL,
     details
 FROM checks;

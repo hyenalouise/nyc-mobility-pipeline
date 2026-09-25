@@ -54,4 +54,4 @@ With `--record-control`, the gate appends one row per check to `ftw-week-08`.`01
 | `code_revision` | `--code-revision`, or `UNSET` when empty (D25) |
 | `batch_id`, `source_version_id` | `NULL`: the gate runs before Bronze creates a batch or version |
 | `evidence_location` | the input paths the gate read |
-| `owner` | `TODO`, like the SQL gates, until #126 |
+| `owner` | `Ina Magno`, like the SQL gates, until #126 |

@@ -393,7 +393,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    'Briana Capul',
     NULL,
     details
 FROM checks;

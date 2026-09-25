@@ -192,7 +192,7 @@ SELECT
     NULL,              -- batch_id: this gate checks the whole table, not one batch
     NULL,              -- source_version_id: same
     code_revision,
-    'TODO',            -- owner
+    'Ina Magno',            -- owner
     NULL,              -- evidence_location
     details
 FROM checks;

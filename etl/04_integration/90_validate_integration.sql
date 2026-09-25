@@ -239,7 +239,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    'Ina Magno',
     NULL,
     details
 FROM checks;

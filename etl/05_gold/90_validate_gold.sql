@@ -566,7 +566,7 @@ SELECT
         ELSE checks.fail_count * 100.0 / checks.total_count
     END AS fail_pct,
     checks.threshold_pct,
-    'ina' AS owner,
+    'Ina Magno' AS owner,
     checks.details,
     'etl/05_gold/90_validate_gold.sql' AS evidence_location
 FROM gold_validation_checks AS checks

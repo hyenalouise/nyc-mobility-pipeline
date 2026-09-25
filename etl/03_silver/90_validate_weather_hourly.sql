@@ -373,7 +373,7 @@ SELECT
     NULL,
     NULL,
     code_revision,
-    'TODO',
+    'Hazelle Cuevas',
     NULL,
     details
 FROM checks;
