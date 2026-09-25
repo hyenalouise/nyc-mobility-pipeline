@@ -51,6 +51,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D26 | Add a `no_stuck_runs` check to the Control gate, detecting abandoned pipeline runs | Approved | A run left STARTED past `stuck_after_hours` now fails the gate instead of going unnoticed |
 | D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
 | D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Approved through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
+| D29 | Block on trips that end before they start, not on zero-length trips; keep the distance and passenger checks as they are | Approved through Issue #153 | A month with a few more zero-length trips no longer stops the scheduled run, and a delivery with reversed timestamps still does |
 
 
 ## Foundational decisions
@@ -1193,6 +1194,8 @@ and were left unchanged here:
 
 Whether they follow the same rule is a separate decision, tracked in #153 together with a wording fix in `docs/validation.md`, which calls INFO checks "measurements with a tolerance" although every INFO check records `threshold_pct` as NULL.
 
+Resolved in D29.
+
 **Consequences:**
 
 - `evidence/proof/source-validation/results.json` must be regenerated from
@@ -1202,3 +1205,55 @@ Whether they follow the same rule is a separate decision, tracked in #153 togeth
 - `evidence/proof/2026-09-23-bronze-duckdb-reconciliation.md` still records
   the 15-check run of Issue #115. It is left unchanged as a record of that run.
 - Issue #148, which runs the gate as a job task, is unblocked by this.
+
+### D29: The gates block on reversed trips, not zero-length ones
+
+**Status:** Approved through Issue #153
+**Decision date:** 2026-09-24
+
+**Decision:**
+
+The three checks D28 left open for review:
+
+| Check | Before | After |
+|---|---|---|
+| `trip_distance_non_negative` | `BLOCK` | `BLOCK`, unchanged |
+| `dropoff_after_pickup` | `WARN` at 0.1%, counting dropoff at **or** before pickup | Split into `dropoff_before_pickup`, `WARN` at 0.1%, and `zero_length_trip`, `INFO` |
+| `passenger_count_gt_8` | `WARN` at 0.1% | `WARN` at 0.1%, unchanged |
+
+The dropoff split applies to both the source gate (`src/ingestion/source_gate.py`) and the Bronze SQL gate (`etl/02_bronze/90_validate_green_taxi.sql`). `docs/validation.md` now says INFO checks have no threshold.
+
+**Reason:**
+
+Silver keeps all four conditions and flags them (D15). Each check still got its own answer, because the data and the meaning differ.
+
+- **Negative distance stays BLOCK.** It had 0 rows in March, April and May 2026. A negative fare can be a refund or a void, which is why D28 reports it. A negative distance has no legitimate meaning, so it points to a broken delivery rather than a source trait. The Bronze SQL gate also treats it as `FAIL`, and CI's bad-delivery step keeps a real blocking check to exercise.
+- **The dropoff check is split.** It counted 100 rows: 99 zero-length trips (dropoff at the same instant as pickup) and 1 trip that ended before it started. By month that was 35, 38 and 27 against a limit of 45, so April was 7 rows from blocking the scheduled run (D27) over trips Silver keeps: zero-length trips carry `implausible_duration_flag`. Only the one reversed trip matches Silver's `dropoff_before_pickup_flag`. After the split, the blocking check uses Silver's own condition, and zero-length trips are counted as INFO. Reversed timestamps up to 0.1% are treated as isolated row-level source anomalies and retained with a Silver flag; a rate above 0.1% is treated as systemic timestamp corruption, such as swapped pickup and drop-off columns, and blocks the delivery.
+- **Both gates change.** The Bronze SQL gate had the identical at-or-before rule. Changing only the source gate would have left the same risk one step later in the same run.
+- **Passenger count stays WARN.** 13 rows; the worst month was 0.0156%. Rates up to 0.1% are treated as isolated row-level source anomalies and retained with a Silver flag. A rate above 0.1%, more than six times the highest observed monthly rate, is treated as a material departure from the established source baseline and evidence of a broader source-quality, schema, or column-mapping problem, so it blocks the delivery.
+
+**Exploratory local decision analysis verified 2026-09-24**, with DuckDB 1.4.5, against local copies of the three Green Taxi files whose SHA-256 checksums match the Volume:
+
+- Before: 16 checks, `ACCEPTED`; `dropoff_after_pickup` `WARN`, 100 rows (0.075%).
+- After: 17 checks, `ACCEPTED`, exit 0; `dropoff_before_pickup` `WARN`, 1 row (0.0007%); `zero_length_trip` `INFO`, 99 rows. Each month on its own is also `ACCEPTED`.
+- `tests/test_source_gate_severities.py` pins each severity, and checks the effect: a delivery with 2% zero-length trips is `ACCEPTED`, and one with 2% reversed trips is `BLOCKED` on `dropoff_before_pickup`. All four tests fail against the previous code.
+
+DuckDB 1.4.5 was used only for the exploratory local decision analysis above. The committed `evidence/proof/source-validation/results.json` and the executed Databricks evidence were generated with DuckDB 1.1.3, the version pinned in `requirements-dev.txt` on this branch.
+
+**Verified on the dev job, 2026-09-24:** deployed `9bc870e` and ran it (run `1115563914656407`): all 32 tasks succeeded. The source-gate task read the three files on the Volume with DuckDB 1.1.3 and recorded 17 Green Taxi checks, 0 failed. In both the `source` and `bronze` layers, `data_quality_results` shows `dropoff_before_pickup` `WARN` with 1 row, `zero_length_trip` `INFO` with 99 rows, and no `dropoff_after_pickup`. `gate_status` is `PASS` for every layer, and Bronze still holds 133,367 rows.
+
+**Rejected alternatives:**
+
+- **Report the whole dropoff check as INFO.** It would never block, so a delivery with reversed timestamps would load without a signal.
+- **Raise the dropoff threshold.** The same objection as in D28: a number tuned to today's data, which still counts zero-length trips as defects.
+- **Change only the source gate.** The Bronze SQL gate would block on the same rows one step later.
+- **Report negative distance as INFO.** It follows D28 literally, but removes a check that has no legitimate trigger, and CI would need another blocking check.
+- **Report passenger count as INFO.** It removes a signal that costs nothing today.
+
+**Consequences:**
+
+- The source gate runs 17 Green Taxi checks. `data_quality_results` rows written before this change keep the name `dropoff_after_pickup`; runs after it write `dropoff_before_pickup` and `zero_length_trip`.
+- CI's bad-delivery step is unchanged, since `trip_distance_non_negative` still blocks.
+- `negative_distance_flag` in Silver stays defensive: with both gates blocking, a negative distance never reaches Silver.
+- `evidence/proof/source-validation/results.json` and `docs/duckdb/evidence.md` are regenerated from the Volume in the same pull request.
+- D28's "Open for review" list is resolved here.

@@ -49,18 +49,18 @@ guess which schema a folder writes to.
 | 01 | Control: runs, ingestion batches, DQ results | `etl/01_control/` | `ftw-week-08`.`01-control` |
 | 02 | Bronze: source landed with provenance, unchanged | `etl/02_bronze/` | `ftw-week-08`.`02-bronze` |
 | 03 | Silver: typed, standardized, deduplicated, same grain | `etl/03_silver/` | `ftw-week-08`.`03-silver` |
-| 04 | Integration: trips resolved to zones and weather | `etl/04_integration/` | `ftw-week-08`.`05-gold` |
+| 04 | Integration: trips resolved to zones and weather | `etl/04_integration/` | `ftw-week-08`.`04-integration` |
 | 05 | Gold: approved facts and built dimensions | `etl/05_gold/` | `ftw-week-08`.`05-gold` |
 | 06 | Analytics: one dataset per business question | `etl/06_analytics/` | `ftw-week-08`.`06-analytics` |
 
 What each stage is responsible for is defined in
 [architecture.md](architecture.md). This document only fixes the names.
 
-A stage number identifies a step, not a schema. Stage 00 creates no tables, and
-stage 04 writes into Gold: resolving a trip to its zones and weather hour adds
-columns without changing the grain of a trip, so it is not a separate layer. The
-`04-` slot is left empty rather than renumbering Gold and Analytics, so that an
-`04-integration` schema can be added later without renaming anything.
+A stage number identifies the pipeline stage and, where that stage persists
+tables, the corresponding Unity Catalog schema. Stage 00 contains source files
+rather than project tables. Stage 04 persists the integration mappings used to
+resolve trips to taxi zones and weather observations in
+`ftw-week-08`.`04-integration`.
 
 The source Volume remains in the existing `00-source` schema. No project tables
 are created in `00-source`.
@@ -81,7 +81,7 @@ Example:
 
 ```sql
 SELECT *
-FROM `ftw-week-08`.`03-silver`.`green_taxi_trips`;
+FROM `ftw-week-08`.`03-silver`.`green_taxi_clean`;
 ```
 
 Do not depend on hidden `USE CATALOG` or `USE SCHEMA` state.
@@ -111,9 +111,10 @@ The DOT advisory table is optional.
 
 | Entity | Table |
 |---|---|
-| Green Taxi trips | `green_taxi_trips` |
+| Green Taxi clean data | `green_taxi_clean` |
+| Green Taxi quarantine data | `green_taxi_quarantine` |
 | Hourly weather | `weather_hourly` |
-| Taxi zones | `taxi_zones` |
+| Taxi zones | `taxi_zones_clean` |
 
 ### Gold
 
@@ -135,6 +136,20 @@ Pattern:
 ```text
 <measure>_by_<dimensions>
 ```
+## Fixed Table Suffixes and Task Patterns
+
+| Pattern or suffix | Meaning |
+|---|---|
+| `_raw` | Source-preserving Bronze table |
+| `_clean` | Cleaned and standardized Silver table |
+| `_quarantine` | Rows retained outside clean data under the approved quarantine policy |
+| `_map` | Integration lookup or resolution table |
+| `fact_` | Gold fact table |
+| `dim_` | Gold dimension table |
+| `05_source_gate_*` | Pre-ingestion DuckDB source-gate job task |
+| `90_validate_*` | Layer or dataset validation task |
+
+`gate_` is not an approved standalone prefix. Source-gate tasks use the `05_source_gate_*` pattern and validation tasks use the `90_validate_*` pattern.
 
 ## Control-table grains
 
@@ -161,6 +176,15 @@ One row per validation check per run, batch, and target table.
 - Use `_flag` for Boolean indicators.
 - Preserve source column names in Bronze where practical.
 - Document every rename, type change, derived field, semantic change, and dropped field.
+  
+## Common Naming and Operational Pitfalls
+
+- Catalog and schema names require backticks because they contain hyphens and schema names begin with digits.
+- Development jobs use a `[dev]` prefix.
+- Development schedules are paused by design under D27.
+- A source-gate run executed without the `code_revision` parameter records `UNSET`.
+- Integration mappings are stored in the `04-integration` schema. Older documentation may show Integration outputs under Gold.
+- The numeric prefix of a task key (for example `05_`, `10_`, `90_`) determines execution order within a stage.
 
 ## File and batch naming
 

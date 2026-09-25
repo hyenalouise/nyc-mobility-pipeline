@@ -10,6 +10,7 @@ Bronze and Silver are validated **per source**, not once per layer. Each source 
 
 | Layer | Gate unit | Validation file |
 |---|---|---|
+| Source (before Bronze) | One gate per source with a contract (Green Taxi, Taxi Zones) | `src/ingestion/source_gate.py`, run as a job task (#148) |
 | Bronze | One gate per source | `etl/02_bronze/90_validate_<source>` |
 | Silver | One gate per source | `etl/03_silver/90_validate_<source>` |
 | Integration | One gate for all sources combined | `etl/04_integration/90_validate_integration` |
@@ -20,6 +21,8 @@ Bronze and Silver are validated **per source**, not once per layer. Each source 
 
 | Step | Requires these gates to pass |
 |---|---|
+| Bronze `green_taxi` load | Source `green_taxi` |
+| Bronze `taxi_zones` load | Source `taxi_zones` |
 | Silver `green_taxi` | Bronze `green_taxi` |
 | Silver `weather_hourly` | Bronze `open_meteo` |
 | Silver `taxi_zones` | Bronze `taxi_zones` |
@@ -33,7 +36,7 @@ A source may advance through Bronze and Silver on its own. Nothing is integrated
 
 Rules for good data are source-specific. How results are recorded and judged is the same for every source, so gates can be compared and combined:
 
-- **Results table:** every check writes one row per check per run to `ftw-week-08`.`01-control`.`data_quality_results`, identified by `layer` and `dataset` (for example `bronze` / `green_taxi`). Table names must not begin with a digit (D13), even though validation filenames start with `90_`.
+- **Results table:** every check writes one row per check per run to `ftw-week-08`.`01-control`.`data_quality_results`, identified by `layer` and `dataset` (for example `bronze` / `green_taxi`, or `source` / `green_taxi` for the pre-ingestion gate). Table names must not begin with a digit (D13), even though validation filenames start with `90_`.
 - **Units:** `fail_pct` and `threshold_pct` are both percentages (0–100).
 - **Status:**
 
@@ -47,9 +50,9 @@ Rules for good data are source-specific. How results are recorded and judged is 
 
 - **Gate result:** a source's gate passes when its latest run for that layer has no `FAIL` rows. `WARN` rows need a written explanation. `INFO` rows are measurements only.
 - **Thresholds** are documented tolerances, not values tuned to today's data.
-- **Known source traits** that appear on every run (for example the 18,754 Green Taxi rows with nulls in six columns) are `INFO` measurements with a tolerance, not permanent warnings.
+- **Known source traits** that appear on every run (for example the 18,754 Green Taxi rows with nulls in six columns) are `INFO` measurements, not permanent warnings. An `INFO` check has no threshold: `threshold_pct` is `NULL`, and `dq_status()` returns `INFO` without reading it, so it is counted and never blocks. Tolerances belong to `WARN` checks.
 - **Empty inputs:** every check defines what happens when its input has zero rows; an empty dataset never passes silently.
-- **Lineage:** each result row records `batch_id` or `source_version_id` and `code_revision`, so it can be traced to the data and code it checked.
+- **Lineage:** each result row records `batch_id` or `source_version_id` and `code_revision`, so it can be traced to the data and code it checked. The exception is layer `source`: the gate runs before a batch exists, so its rows record the input paths in `evidence_location` instead.
 - **Reconciliation** (row counts and at least one measure against the source) is a `FAIL`-severity check inside the gate, not a separate query outside it.
 
 ## Integration join coverage (#37)

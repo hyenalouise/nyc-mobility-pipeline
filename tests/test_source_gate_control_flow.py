@@ -134,3 +134,148 @@ def test_a_negative_fare_is_reported_not_blocking(gate_run):
     assert evidence["gate_result"] == "ACCEPTED"
     fare = next(r for r in evidence["results"] if r["check_name"] == "fare_amount_non_negative")
     assert (fare["severity"], fare["status"], fare["fail_count"]) == ("INFO", "INFO", 1)
+
+
+def test_the_gate_finds_its_contract_from_any_working_directory(tmp_path, monkeypatch):
+    # A job task runs the script from a Git checkout, not necessarily from
+    # the repository root (#148). The real contract must still be found.
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, CLEAN_ROW)
+    evidence_path = tmp_path / "evidence.json"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--evidence", str(evidence_path)],
+    )
+
+    assert source_gate.CONTRACT_PATH.is_absolute()
+    assert source_gate.main() == source_gate.EXIT_ACCEPTED
+    assert source_gate.default_evidence_path("green_taxi").is_absolute()
+
+
+def _run_main(tmp_path, monkeypatch, row, extra_args):
+    contract_path = tmp_path / "source_contract.json"
+    _write_contract(contract_path)
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, row)
+
+    recorded = []
+    monkeypatch.setattr(source_gate, "CONTRACT_PATH", contract_path)
+    monkeypatch.setattr(source_gate, "record_in_control", recorded.append)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--evidence", str(tmp_path / "e.json"), *extra_args],
+    )
+    return source_gate.main(), recorded
+
+
+def test_a_blocked_delivery_is_still_recorded_in_control(tmp_path, monkeypatch):
+    # The job task must leave a record even when it fails the run (#148).
+    bad_row = list(CLEAN_ROW)
+    bad_row[[name for name, _ in COLUMNS].index("trip_distance")] = -1.0
+
+    exit_code, recorded = _run_main(
+        tmp_path, monkeypatch, bad_row, ["--record-control", "--code-revision", "abc123"]
+    )
+
+    assert exit_code == source_gate.EXIT_BLOCKED
+    assert len(recorded) == 1
+    records = [dict(zip(source_gate.CONTROL_COLUMNS, row)) for row in recorded[0]]
+    assert {r["code_revision"] for r in records} == {"abc123"}
+    assert any(r["check_name"] == "trip_distance_non_negative" and r["status"] == "FAIL" for r in records)
+
+
+def test_nothing_is_recorded_without_the_flag(tmp_path, monkeypatch):
+    # Local and CI runs have no Spark session and must not try to write.
+    exit_code, recorded = _run_main(tmp_path, monkeypatch, CLEAN_ROW, [])
+
+    assert exit_code == source_gate.EXIT_ACCEPTED
+    assert recorded == []
+
+
+def test_the_gate_runs_the_way_a_databricks_job_runs_it(tmp_path, monkeypatch):
+    # A job's Python file is run with exec(compile(source, path, "exec")), so
+    # __file__ is not defined (#148, run 329476320889065). The gate must
+    # still find the repository root and its contract.
+    script = Path(source_gate.__file__)
+    namespace = {"__name__": "databricks_job_task"}
+
+    monkeypatch.chdir(tmp_path)
+    exec(compile(script.read_bytes(), str(script), "exec"), namespace)
+
+    assert "__file__" not in namespace
+    assert namespace["REPO_ROOT"] == REPO_ROOT
+    assert namespace["CONTRACT_PATH"].is_file()
+
+
+def _exec_as_job(tmp_path, monkeypatch, row):
+    """Run the gate file as __main__ the way a Databricks job does."""
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, row)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--evidence", str(tmp_path / "e.json")],
+    )
+    script = Path(source_gate.__file__)
+    exec(compile(script.read_bytes(), str(script), "exec"), {"__name__": "__main__"})
+
+
+def test_an_accepted_gate_does_not_raise_systemexit(tmp_path, monkeypatch):
+    # IPython reports SystemExit(0) as a failed task (#148, run
+    # 159238056445742), so success must be a normal return.
+    _exec_as_job(tmp_path, monkeypatch, CLEAN_ROW)
+
+
+def test_a_blocked_gate_still_exits_with_its_code(tmp_path, monkeypatch):
+    bad_row = list(CLEAN_ROW)
+    bad_row[[name for name, _ in COLUMNS].index("trip_distance")] = -1.0
+
+    with pytest.raises(SystemExit) as exited:
+        _exec_as_job(tmp_path, monkeypatch, bad_row)
+
+    assert exited.value.code == source_gate.EXIT_BLOCKED
+
+
+def test_a_test_input_that_passes_still_stops_the_loader(tmp_path, monkeypatch):
+    # An override run checks a staged file while the loader reads the landing
+    # folder. If the staged file passes, the task must still fail, or the
+    # loader would load files this run never checked (#159).
+    exit_code, recorded = _run_main(
+        tmp_path, monkeypatch, CLEAN_ROW,
+        ["--load-input", "/Volumes/landing/green_taxi/*.parquet", "--record-control"],
+    )
+
+    assert exit_code == source_gate.EXIT_TEST_INPUT
+    assert len(recorded) == 1, "the results are still recorded before the task fails"
+    evidence = json.loads((tmp_path / "e.json").read_text())
+    assert evidence["gate_result"] == "ACCEPTED"
+
+
+def test_a_test_input_that_is_blocked_keeps_its_blocked_code(tmp_path, monkeypatch):
+    bad_row = list(CLEAN_ROW)
+    bad_row[[name for name, _ in COLUMNS].index("trip_distance")] = -1.0
+
+    exit_code, _ = _run_main(tmp_path, monkeypatch, bad_row, ["--load-input", "/Volumes/landing/green_taxi/*.parquet"])
+
+    assert exit_code == source_gate.EXIT_BLOCKED
+
+
+def test_the_real_input_passes_as_before(tmp_path, monkeypatch):
+    # A normal run: the gate checks exactly what the loader reads.
+    contract_path = tmp_path / "source_contract.json"
+    _write_contract(contract_path)
+    parquet_path = tmp_path / "sample.parquet"
+    _write_parquet(parquet_path, CLEAN_ROW)
+    monkeypatch.setattr(source_gate, "CONTRACT_PATH", contract_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["source_gate.py", "--input", str(parquet_path), "--load-input", str(parquet_path), "--evidence", str(tmp_path / "e.json")],
+    )
+
+    assert source_gate.main() == source_gate.EXIT_ACCEPTED
+

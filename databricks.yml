@@ -32,6 +32,13 @@ targets:
     workspace:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
 
+    resources:
+      jobs:
+        NYC_Mobility_Pipeline:
+          email_notifications:
+            on_failure:
+              - ${workspace.current_user.userName}
+
   # Deploys under the real job name with no prefix. Only after a dev deploy
   # has been verified.
   #
@@ -48,7 +55,27 @@ targets:
       host: https://dbc-cd77c839-62eb.cloud.databricks.com
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
 
+    resources:
+      jobs:
+        NYC_Mobility_Pipeline:
+          email_notifications:
+            on_failure:
+              - briana.capul@ftwfoundation.org
+              - hazelle.cuevas@ftwfoundation.org
+              - crystal.manas@ftwfoundation.org
+              - gabrielle.torres@ftwfoundation.org
+              - ina.magno@ftwfoundation.org
+
 resources:
+  dashboards:
+    data_quality_dashboard:
+      display_name: NYC Mobility Data Quality Dashboard
+      file_path: dashboards/11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+    analytics_dashboard:
+      display_name: NYC Mobility Analytics Dashboard
+      file_path: dashboards/11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json
+      warehouse_id: ${var.warehouse_id}
   jobs:
     NYC_Mobility_Pipeline:
       name: NYC Mobility Pipeline
@@ -59,9 +86,73 @@ resources:
               path: etl/01_control/00_create_control_tables.sql
               source: GIT
             warehouse_id: ${var.warehouse_id}
-        - task_key: 10_load_green_taxi
+        # Pre-ingestion source gates (#148). Each runs the DuckDB gate on its
+        # source's files in the Volume before that source's Bronze loader,
+        # and records one row per check in data_quality_results. A BLOCKED
+        # delivery fails the task, so only that source's loader and what
+        # follows it are skipped; the other sources carry on (D17).
+        - task_key: 05_source_gate_green_taxi
           depends_on:
             - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - green_taxi
+              - --input
+              - "{{job.parameters.green_taxi_input}}"
+              - --load-input
+              - /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+              - --evidence
+              - /tmp/source_gate_green_taxi.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
+        - task_key: 05_source_gate_taxi_zones
+          depends_on:
+            - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - taxi_zones
+              - --input
+              - "{{job.parameters.taxi_zones_input}}"
+              - --load-input
+              - /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+              - --evidence
+              - /tmp/source_gate_taxi_zones.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
+        # Weather's gate (#125) reads the same landed response the Bronze
+        # loader reads (20_load_open_meteo.sql), not a local copy.
+        - task_key: 05_source_gate_weather
+          depends_on:
+            - task_key: 00_create_control_tables
+          environment_key: source_gate
+          spark_python_task:
+            python_file: src/ingestion/source_gate.py
+            source: GIT
+            parameters:
+              - --source
+              - weather
+              - --input
+              - "{{job.parameters.weather_input}}"
+              - --load-input
+              - /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
+              - --evidence
+              - /tmp/source_gate_weather.json
+              - --record-control
+              - --code-revision
+              - "{{job.parameters.code_revision}}"
+        - task_key: 10_load_green_taxi
+          depends_on:
+            - task_key: 05_source_gate_green_taxi
           sql_task:
             file:
               path: etl/02_bronze/10_load_green_taxi.sql
@@ -69,7 +160,7 @@ resources:
             warehouse_id: ${var.warehouse_id}
         - task_key: 20_load_open_meteo
           depends_on:
-            - task_key: 00_create_control_tables
+            - task_key: 05_source_gate_weather
           sql_task:
             file:
               path: etl/02_bronze/20_load_open_meteo.sql
@@ -77,7 +168,7 @@ resources:
             warehouse_id: ${var.warehouse_id}
         - task_key: 30_load_taxi_zones
           depends_on:
-            - task_key: 00_create_control_tables
+            - task_key: 05_source_gate_taxi_zones
           sql_task:
             file:
               path: etl/02_bronze/30_load_taxi_zones.sql
@@ -298,18 +389,32 @@ resources:
             - task_key: 90_validate_taxi_zones
             - task_key: 90_validate_control
             - task_key: 90_validate_clean_taxi_zones
+            - task_key: 05_source_gate_green_taxi
+            - task_key: 05_source_gate_taxi_zones
+            - task_key: 05_source_gate_weather
           run_if: ALL_DONE
           dashboard_task:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
-            dashboard_id: 01f1b2d854811eb6ae9d063a806e7612
+            dashboard_id: ${resources.dashboards.data_quality_dashboard.id}
         - task_key: nyc_mobility_analytics
           depends_on:
             - task_key: 90_validate_analytics
           dashboard_task:
             subscription: {}
             warehouse_id: ${var.warehouse_id}
-            dashboard_id: 01f1b2d7cd3819ab9f69f54022737848
+            dashboard_id: ${resources.dashboards.analytics_dashboard.id}
+      # Serverless job compute for the three Python source gates. The SQL
+      # warehouse runs SQL only. duckdb is pinned to the version in
+      # requirements-dev.txt, so the job runs the same engine as CI and the
+      # committed evidence; tests/test_bundle_contract.py fails if they drift.
+      environments:
+        - environment_key: source_gate
+          spec:
+            environment_version: "5"
+            dependencies:
+              - duckdb==1.1.3
+
       # Every gate reads :code_revision and stamps it on the rows it writes, so
       # a data-quality result can be traced to the code that produced it.
       #
@@ -324,6 +429,24 @@ resources:
       parameters:
         - name: code_revision
           default: ${bundle.git.commit}
+
+        # What each source gate reads (#158). The defaults are the landing
+        # paths the Bronze loaders read, so a normal or scheduled run checks
+        # exactly what gets loaded. Override one to make a gate refuse a test
+        # delivery staged outside the landing folder:
+        #   databricks bundle run NYC_Mobility_Pipeline \
+        #     --params 'green_taxi_input=/Volumes/.../_test/green_taxi_blocked/*.parquet'
+        # The loaders always read the landing folder, so test data is never
+        # loaded. Each gate is also given its loader's path (--load-input):
+        # when its input differs, the gate records its results and then fails
+        # even if the test input passed, so an override run never loads
+        # landing files it didn't check (#159).
+        - name: green_taxi_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/green_taxi/*.parquet
+        - name: taxi_zones_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/taxi_zones/taxi_zone_lookup.csv
+        - name: weather_input
+          default: /Volumes/ftw-week-08/00-source/group_a_source/weather/open_meteo_mar_may_2026.json
 
       # Pinned to a commit, not a branch, and deliberately.
       #
@@ -345,16 +468,20 @@ resources:
         enabled: true
       performance_target: PERFORMANCE_OPTIMIZED
 
-      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so a
-      # daily run would find nothing new on almost every day; weekly bounds how
-      # long a newly landed file waits to one week, and gives freshness
+      notification_settings:
+        no_alert_for_canceled_runs: true
+
+      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so
+      # a daily run would find nothing new on almost every day; weekly bounds
+      # how long a newly landed file waits to one week, and gives freshness
       # monitoring an interval to measure against.
       #
       # Quartz syntax, not crontab: seconds first, and `?` in the day-of-month
-      # position because day-of-week is set. "0 6 * * 1" would not mean this.
+      # position because day-of-week is set. "0 6 * * 1" would not mean the
+      # same thing here.
       #
       # No pause_status here, deliberately. Left unset, the target decides:
-      # dev (development mode) deploys it PAUSED so nobody's sandbox fires on
+      # dev (development mode) deploys it PAUSED so nobody's sandbox fires
       # a timer, and prod deploys it UNPAUSED. Setting it on the job would
       # override that for every target.
       schedule:
