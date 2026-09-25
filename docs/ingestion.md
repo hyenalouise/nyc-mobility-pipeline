@@ -283,7 +283,17 @@ wrong one leads to the wrong recovery action:
   a corrected configuration, a restored default). This is the normal
   recovery action once the actual problem is addressed.
 - **Backfill** — process a historical period that was missed entirely,
-  separate from retrying or rerunning the most recent attempt.
+  separate from retrying or rerunning the most recent attempt. 
+  
+Backfill needs no separate command or mode in this pipeline. Each loader
+discovers every file already sitting in its landing folder and compares
+each one's content hash against `ingestion_batches`; any file with no
+matching `SUCCESS` batch is treated as new and loads on the very next
+normal run, regardless of what period it covers. If an older month had
+never been delivered and was later placed in the landing folder, running
+the pipeline normally (`databricks bundle run NYC_Mobility_Pipeline
+--target dev`) would discover and load it exactly as it would a newly
+arrived current month — the same mechanism, not a special procedure.
 
 ### How to run the pipeline
 

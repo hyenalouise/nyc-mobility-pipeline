@@ -168,8 +168,6 @@ outcome for a rerun against unchanged real files.
 
 ## What this does not prove
 
-- **Backfill was not exercised.** This demonstration is a Retry/Rerun
-  scenario against a recent window; it does not cover reprocessing an
-  older, historical period that was missed entirely.
+- **Backfill was not executed live.** Doing so safely would require either a historical period genuinely missing from Bronze, or placing a test file in the real landing folder — the second of which this project deliberately avoids, since loaders discover and load anything placed there automatically. The mechanism itself is explained in the runbook (`docs/ingestion.md`): the same content-hash discovery a normal run uses would pick up a missing historical file exactly as it picks up a newly arrived current one, with no separate procedure required. This demonstration exercises Retry and Rerun only.
 - **`prod` was not used.** Only the `dev` job: a personal sandbox is the
-  safe place to force a failure on purpose.
+safe place to force a failure on purpose.
