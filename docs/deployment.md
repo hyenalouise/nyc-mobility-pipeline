@@ -85,14 +85,3 @@ updates the job definition. It does not run the pipeline -- that's a
 separate action (`databricks bundle run`, or the Jobs UI), same as it was
 before this issue. See `docs/workflow.md` Part 4 for running a deployed job
 and checking what landed.
-
-## Prerequisite note (issue #117)
-
-Issue #133 lists issue #117 ("make databricks.yml an actual deployable
-bundle") as a blocker. As of this workflow, `databricks.yml` already has a
-`bundle:` name, `dev`/`prod` targets with per-target `workspace.host`, a
-parameterized `warehouse_id` variable, and a `git_source` pinned to
-`${bundle.git.commit}` -- all of #117's acceptance criteria -- merged via
-PR #128. #117 itself is still showing as open on the issue tracker; worth
-closing it out (or confirming with whoever owns it) rather than treating
-#133 as still blocked.
