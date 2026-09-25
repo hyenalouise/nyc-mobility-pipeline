@@ -1,4 +1,4 @@
-"""docs/job_setup.md's Tasks table must describe the job databricks.yml defines.
+"""docs/operations/job-setup.md's Tasks table must describe the job databricks.yml defines.
 
 The table was written before the bundle existed and named every task with a
 descriptive label (`control_setup`, `gate_source_green_taxi`, ...) instead of
@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-JOB_SETUP = REPO_ROOT / "docs" / "job_setup.md"
+JOB_SETUP = REPO_ROOT / "docs" / "operations" / "job-setup.md"
 BUNDLE_PATH = REPO_ROOT / "databricks.yml"
 
 
@@ -85,7 +85,7 @@ def test_the_table_lists_every_task_by_its_real_key():
     doc, job = doc_rows(JOB_SETUP.read_text(encoding="utf-8")), job_tasks()
     unknown = sorted(set(doc) - set(job))
     missing = sorted(set(job) - set(doc))
-    assert not unknown, f"docs/job_setup.md names tasks that are not in databricks.yml: {unknown}"
+    assert not unknown, f"docs/operations/job-setup.md names tasks that are not in databricks.yml: {unknown}"
     assert not missing, f"databricks.yml has tasks the Tasks table does not list: {missing}"
 
 

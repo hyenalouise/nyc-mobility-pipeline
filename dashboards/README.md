@@ -1,80 +1,58 @@
 # Dashboards
 
-This folder contains the dashboard definitions for the NYC Mobility Pipeline
-project. Each `.lvdash.json` file is the deployable source of truth:
-`databricks.yml` declares it as a bundle-owned resource
-(`resources.dashboards`), and the job's dashboard tasks reference that
-resource rather than a hardcoded dashboard id, so a deploy into a workspace
-that has never held these dashboards creates them there (#122).
+This folder contains Databricks Lakeview dashboard definitions owned by the
+Asset Bundle. `databricks.yml` declares each resource and connects its refresh
+task to the appropriate validation task.
 
-## Available Dashboards
+| Folder | Dashboard | Reads | Job dependency |
+|---|---|---|---|
+| `11_data_quality_dashboard/` | NYC Mobility Data Quality Dashboard | `01-control.data_quality_results` and gate state | Validation tasks; refresh is allowed after failed upstream work so failures remain visible |
+| `11_analytics_dashboard/` | NYC Mobility Analytics Dashboard | Validated Gold and Analytics outputs | `90_validate_analytics` |
+| `11_pipeline_execution_monitoring/` | NYC Mobility Pipeline Execution Dashboard | Pipeline run and operational state | `90_validate_control`; refresh uses operational completion behavior |
 
-### 1. NYC Mobility Data Quality Dashboard
+## Refresh dependencies
 
-Related Issue: #44
-Definition file: `11_data_quality_dashboard/10_NYC_mobility_data_quality_dashboard.lvdash.json`
+```mermaid
+flowchart LR
+    gates[Source, Bronze, Silver, Integration, Gold, Analytics, and Control gates]
+    analytics_gate[90_validate_analytics]
+    control_gate[90_validate_control]
 
-Purpose:
-- Monitor pipeline health
-- Track validation results
-- Surface failed DQ checks
-- Monitor freshness and reconciliation results
+    gates -->|ALL_DONE| dq[Data Quality Dashboard]
+    analytics_gate -->|only after success| analytics[Analytics Dashboard]
+    control_gate -->|ALL_DONE| monitoring[Pipeline Execution Dashboard]
+```
 
-Key Features:
-- Validation status by source and layer
-- DQ failure trends
-- Row count reconciliation
-- Source and layer filtering
-- Pipeline health monitoring
+`ALL_DONE` lets the operational dashboards refresh after either success or
+failure. The Analytics dashboard refreshes only after validated Analytics output
+is available.
 
----
+## Source of truth
 
-### 2. NYC Mobility Analytics Dashboard
+The `.lvdash.json` files are the deployable definitions. Bundle resource names
+and job dependencies are defined in `databricks.yml`. The task inventory is
+documented in [`docs/operations/job-setup.md`](../docs/operations/job-setup.md).
 
-Related Issue: #43
-Definition file: `11_analytics_dashboard/10_NYC_mobility_analytics_dashboard.lvdash.json`
+Do not hardcode a workspace dashboard ID into the job definition. A new target
+must be able to create or update the bundle-owned resource from this repository.
 
-Purpose:
-- Present validated answers to approved business questions
-- Support mobility, weather, and taxi-zone analysis
+## Change procedure
 
-Key Features:
-- Trip activity by date and hour
-- Pickup and dropoff analysis
-- Weather impact analysis
-- Zone-level metrics
-- Business KPI visualizations
+1. Make or export the dashboard change from the approved workspace process.
+2. Review the JSON diff for unexpected workspace-specific values.
+3. Update `databricks.yml` if the resource or task dependency changed.
+4. Run the local tests and validate the bundle target.
+5. Deploy to development and verify rendering and data sources.
+6. Compare displayed values with the validated Analytics, Gold, or Control
+   tables before promotion.
 
----
+## Evidence boundary
 
-### 3. NYC Mobility Pipeline Execution Dashboard
+A dashboard task succeeding proves that its refresh task completed. It does not
+prove that every displayed number is correct. Record a human reconciliation
+against the underlying validated table when the dashboard is first released or
+materially changed.
 
-Related Issue: #118
-Definition file: `11_pipeline_execution_monitoring/10_NYC_mobility_pipeline_execution_dashboard.lvdash.json`
-
-Purpose:
-- Monitor pipeline execution and run health, independent of data quality
-- Surface stuck, failed, or long-running pipeline executions
-
-Key Features:
-- Run status and duration by pipeline execution
-- Stuck-run detection
-- Execution history and trends
-
-
----
-
-## Dashboard Evidence and Folder Structure
-
-dashboards/
-├── README.md
-├── 11_data_quality_dashboard/
-│   └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
-├── 11_analytics_dashboard/
-│   └── 10_NYC_mobility_analytics_dashboard.lvdash.json
-└── 11_pipeline_execution_monitoring/
-    └── 10_NYC_mobility_pipeline_execution_dashboard.lvdash.json
-
-Each `.lvdash.json` is exported directly from the workspace; it is not
-edited by hand. Screenshots or other supporting evidence, if needed, go
-alongside the definition file in the same folder.
+Screenshots may be stored beside a definition only when they are small,
+reviewed, free of sensitive values, and useful as durable evidence. Prefer a
+run-specific evidence summary under `evidence/pipeline-runs/` for factual claims.

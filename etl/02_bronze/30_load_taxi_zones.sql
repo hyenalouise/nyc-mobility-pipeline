@@ -6,7 +6,7 @@
 -- Target: `ftw-week-08`.`02-bronze`.taxi_zones_raw
 -- Grain: one row per source LocationID
 --
--- D11 keeps this a full-refresh reference snapshot: 265 rows, delivered complete, no incremental row logic. It is implemented as a MERGE rather than CREATE OR REPLACE so that rerunning an unchanged snapshot changes nothing at all -- an overwrite would reset ingested_at on every row,  which validation.md's repeat-run proof forbids. The end state is identical to a full refresh: the target mirrors the snapshot exactly, including rows removed from it.
+-- D11 keeps this a full-refresh reference snapshot: 265 rows, delivered complete, no incremental row logic. It is implemented as a MERGE rather than CREATE OR REPLACE so that rerunning an unchanged snapshot changes nothing at all -- an overwrite would reset ingested_at on every row, which docs/data/validation.md's repeat-run proof forbids. The end state is identical to a full refresh: the target mirrors the snapshot exactly, including rows removed from it.
 --
 -- The source path appears exactly ONCE, inside read_files. Everything else, file name, size, modification time, uri, is derived from _metadata, so provenance cannot drift from the file actually read.
 -- ============================================================

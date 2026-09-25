@@ -21,7 +21,7 @@ CONTRACT_PATH = REPO_ROOT / "config" / "source_contract.json"
 EVIDENCE_DIR = REPO_ROOT / "evidence" / "proof" / "source-validation"
 
 # Green Taxi keeps its original, already-committed filename (results.json,
-# referenced by docs/duckdb/evidence.md) so this fix stays backward
+# referenced by docs/tools/duckdb/evidence.md) so this fix stays backward
 # compatible. Any other source falls back to a per-source filename instead
 # of sharing that path -- which is what let a taxi_zones run silently
 # overwrite Green Taxi's committed evidence before this fix.
@@ -58,7 +58,7 @@ WEATHER_HOURLY_VIEW = "weather_hourly_source"
 
 # Exit codes are a supported interface: CI (.github/workflows/ci.yml) and
 # any orchestrating job branch on these values, not just on zero-vs-nonzero.
-# Keep this table and docs/duckdb/source_gate.md in sync with each other.
+# Keep this table and docs/tools/duckdb/source-gate.md in sync with each other.
 EXIT_ACCEPTED = 0
 EXIT_BLOCKED = 1
 EXIT_INVALID_CONFIGURATION = 2
@@ -1131,7 +1131,7 @@ def run_weather_checks(connection, contract):
 
     # 5. The hourly series itself is not empty. A response can have a
     # present-but-empty hourly block (all four arrays length 0) instead of
-    # the 4xx error profiled for an invalid window (docs/source_profile.md)
+    # the 4xx error profiled for an invalid window (docs/data/source-profile.md)
     # -- this catches that shape distinctly from a response missing hourly
     # entirely (already caught by required_columns above).
     results.append(
@@ -1251,7 +1251,7 @@ def run_weather_checks(connection, contract):
     # (it is stateless, like Green Taxi's and Taxi Zones' gates), so what
     # it can prove is that one landed response does not itself contain the
     # same hour twice -- cross-run duplicate suppression is Bronze's job,
-    # via the business key documented in docs/ingestion.md.
+    # via the business key documented in docs/data/ingestion.md.
     duplicate_hours = scalar(
         connection,
         f"""
@@ -1385,7 +1385,7 @@ def run_weather_checks(connection, contract):
     )
 
     # 13. Temperature is within a physically plausible range. Mirrors the
-    # anomaly query used to profile this source (docs/source_profile.md):
+    # anomaly query used to profile this source (docs/data/source-profile.md):
     # precipitation < 0 OR temperature_2m < -50 OR temperature_2m > 60.
     temperature_out_of_range = scalar(
         connection,

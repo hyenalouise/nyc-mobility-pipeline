@@ -12,7 +12,7 @@
 -- side. Mixing them in one row would double-count a trip.
 --
 -- Trip count measures RECORDED activity and is a proxy for demand, not a
--- measurement of it (docs/data_model.md).
+-- measurement of it (docs/architecture/data-model.md).
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS `ftw-week-08`.`06-analytics`;

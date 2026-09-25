@@ -5,7 +5,7 @@
 -- Runs after: etl/02_bronze/10_load_green_taxi.sql
 -- Target: `ftw-week-08`.`01-control`.data_quality_results
 -- Grain: one row per check per run
--- Contract: docs/validation.md (shared result contract, D17)
+-- Contract: docs/data/validation.md (shared result contract, D17)
 --
 -- Replaces both notebooks/90.validate_green_taxi.py and the 84-line
 -- SELECT-only file of the same name. Silver green_taxi runs only when

@@ -24,7 +24,7 @@ from pyspark.sql.window import Window
 # MAGIC lpep_dropoff_datetime, PULocationID, DOLocationID, trip_distance, fare_amount.
 # MAGIC
 # MAGIC Excluded: passenger_count, payment_type, RatecodeID, trip_type,
-# MAGIC congestion_surcharge — null on ~13-15% of rows (source_profile.md, A4); nulls
+# MAGIC congestion_surcharge — null on ~13-15% of rows (docs/data/source-profile.md, A4); nulls
 # MAGIC in a hash key produce unstable matching.
 # MAGIC
 # MAGIC `trip_hash` is a SHA-256 digest of the composite key — a fingerprint used to
@@ -195,7 +195,7 @@ else:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Summary — for docs/decisions.md
+# MAGIC ## Summary — for docs/governance/decisions.md
 # MAGIC
 # MAGIC - Composite business key: VendorID, lpep_pickup_datetime, lpep_dropoff_datetime,
 # MAGIC   PULocationID, DOLocationID, trip_distance, fare_amount

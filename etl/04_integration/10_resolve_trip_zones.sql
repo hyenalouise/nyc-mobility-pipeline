@@ -5,7 +5,7 @@
 -- Runs after: Silver gates for green_taxi and taxi_zones
 -- Target:    `ftw-week-08`.`04-integration`.trip_zone_map
 -- Grain:     one row per accepted trip, unchanged from Silver
--- Contract:  docs/data_model.md, docs/source_to_target_mapping.md
+-- Contract:  docs/architecture/data-model.md, docs/architecture/source-to-target.md
 --
 -- Adds zone resolution to a trip WITHOUT restating the trip. The output is
 -- a narrow map keyed on trip_hash (D19), so trip attributes live in exactly

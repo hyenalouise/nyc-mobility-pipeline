@@ -43,7 +43,7 @@ USING DELTA;
 
 -- ------------------------------------------------------------
 -- One row per pipeline run. Exists so every DQ result has a run_id
--- and a code_revision to trace back to (validation.md lineage rule,
+-- and a code_revision to trace back to (docs/data/validation.md lineage rule,
 -- evidence/README.md code-revision rule). Minimal on purpose: this
 -- un-defers only the part of D14's pipeline_runs that the gates need.
 -- ------------------------------------------------------------
@@ -60,7 +60,7 @@ USING DELTA;
 
 -- ------------------------------------------------------------
 -- One row per check per run, for every gate in every layer (D17).
--- Column set follows the shared result contract in docs/validation.md.
+-- Column set follows the shared result contract in docs/data/validation.md.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `ftw-week-08`.`01-control`.data_quality_results (
     run_id STRING NOT NULL,
@@ -94,7 +94,7 @@ USING DELTA;
 
 
 -- ------------------------------------------------------------
--- The shared status rule from docs/validation.md, defined once so six
+-- The shared status rule from docs/data/validation.md, defined once so six
 -- gates stop re-implementing the same CASE expression differently.
 --
 -- Deliberately NOT handling empty inputs: a check whose input has zero
@@ -110,7 +110,7 @@ CREATE OR REPLACE FUNCTION `ftw-week-08`.`01-control`.dq_status(
     threshold_pct DOUBLE
 )
 RETURNS STRING
-COMMENT 'Shared gate status rule (docs/validation.md). Order of evaluation is significant.'
+COMMENT 'Shared gate status rule (docs/data/validation.md). Order of evaluation is significant.'
 RETURN
     CASE
         WHEN severity = 'INFO'                                    THEN 'INFO'
@@ -126,7 +126,7 @@ RETURN
 --
 -- Answers two questions that would otherwise be retyped in every file:
 -- "what is the state of the pipeline?" and, for a stage about to run,
--- "did the gates I depend on pass?" (docs/validation.md, gate dependencies).
+-- "did the gates I depend on pass?" (docs/data/validation.md, gate dependencies).
 --
 -- ROW_NUMBER rather than DENSE_RANK here on purpose: this must return
 -- exactly one row per gate, so two runs sharing a timestamp need a
@@ -135,7 +135,7 @@ RETURN
 --
 -- A gate that has never run does not appear. Callers must treat a missing
 -- row as "not passed" rather than as "no failures" -- see the dependency
--- assertion documented in docs/validation.md.
+-- assertion documented in docs/data/validation.md.
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW `ftw-week-08`.`01-control`.gate_status AS
 WITH ranked AS (

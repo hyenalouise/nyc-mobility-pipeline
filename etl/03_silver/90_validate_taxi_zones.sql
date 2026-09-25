@@ -5,7 +5,7 @@
 -- Runs after: etl/03_silver/30_clean_taxi_zones.sql
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract, D17)
+-- Contract:  docs/data/validation.md (shared result contract, D17)
 --
 -- Integration runs only when this passes, together with the green_taxi
 -- and weather Silver gates.

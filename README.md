@@ -1,551 +1,317 @@
 # NYC Mobility Pipeline
 
-A Databricks lakehouse pipeline combining NYC Green Taxi trips, historical
-Open-Meteo weather observations, and NYC Taxi Zone reference data.
+An end-to-end Databricks lakehouse pipeline built by **Group A, FTW Data
+Engineering Batch 12**.
+
+The project combines NYC Green Taxi trips, Open-Meteo historical weather, and
+NYC Taxi Zone data to produce validated Gold tables, Analytics datasets, and
+dashboards.
+
+## Tools used
+
+<p>
+  <img alt="Databricks" src="https://img.shields.io/badge/Databricks-FF3621?style=flat-square&logo=databricks&logoColor=white">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="SQL" src="https://img.shields.io/badge/SQL-0B89FD?style=flat-square&logoColor=white">
+  <img alt="DuckDB" src="https://img.shields.io/badge/DuckDB-FEC90E?style=flat-square&logo=duckdb&logoColor=black">
+  <img alt="Delta Lake" src="https://img.shields.io/badge/Delta_Lake-00ADD8?style=flat-square&logoColor=white">
+  <img alt="Jupyter" src="https://img.shields.io/badge/Jupyter-F37626?style=flat-square&logo=jupyter&logoColor=white">
+  <img alt="pytest" src="https://img.shields.io/badge/pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white">
+  <img alt="GitHub Actions" src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white">
+</p>
+
+[Architecture](docs/architecture/overview.md) ·
+[Data model](docs/architecture/data-model.md) ·
+[Setup](docs/getting-started/terminal-setup.md) ·
+[Operations](docs/operations/runbook.md) ·
+[Evidence](evidence/README.md) ·
+[Contributing](CONTRIBUTING.md)
+
+## Overview
+
+### What this project answers
+
+- When and where does recorded Green Taxi activity happen?
+- How does trip behavior vary across observed weather conditions?
+- Which Taxi Zones show the most pickup and drop-off activity?
+
+These are descriptive questions about the available records. The results do not
+represent all NYC transportation demand or prove that weather causes changes in
+taxi activity.
+
+### Why we built it
+
+The project demonstrates how a data pipeline can:
+
+- combine data from multiple sources;
+- validate data before it reaches trusted tables;
+- process new data incrementally;
+- recover safely from failures;
+- publish analytics-ready datasets;
+- track which code and source data produced a result;
+- move changes from development to production through a controlled workflow.
+
+## Pipeline at a glance
 
 ```mermaid
-flowchart TD
-    A[Frame business questions, grain and naming] --> B[Profile all sources]
-    B --> C[Design ingestion and processing state]
-    C --> D[Draft and ratify star schema]
-    D --> E[Ingest source data]
-    E --> F[Bronze: preserve received data]
-    F --> G{Bronze DQ gate per source}
-    G -- Fail --> F
-    G -- Pass --> H[Silver: clean and standardize]
-    H --> I{Silver DQ gate per source}
-    I -- Fail --> H
-    I -- Pass --> J[Integration: taxi, zones and weather]
-    J --> K{Integration DQ gate}
-    K -- Fail --> J
-    K -- Pass --> L[Gold dimensions]
-    L --> M[Gold fact]
-    M --> N{Gold DQ gate}
-    N -- Fail --> L
-    N -- Pass --> O[Analytics outputs]
-    O --> P{Analytics DQ gate}
-    P -- Fail --> O
-    P -- Pass --> Q[Analytics Dashboard]
+flowchart LR
+    source[Source files] --> gate{Pre-Bronze source gate}
+    gate -->|accepted| bronze[02 Bronze]
+    gate -->|blocked| stop[Stop that source lane]
+    bronze --> bronze_dq{Bronze gate}
+    bronze_dq --> silver[03 Silver]
+    silver --> silver_dq{Silver gate}
+    silver_dq --> integration[04 Integration]
+    integration --> gold[05 Gold]
+    gold --> analytics[06 Analytics]
+    analytics --> dashboards[Dashboards]
 
-    G --> R[DQ results table]
-    I --> R
-    K --> R
-    N --> R
-    P --> R
-    R --> S[DQ Dashboard]
-
-    Q --> T[Incremental and rerun proof]
-    S --> T
+    control[01 Control] --> gate
+    control --> bronze
+    control --> bronze_dq
+    control --> silver_dq
+    control --> integration
+    control --> gold
+    control --> analytics
 ```
 
-The pipeline is designed for traceable ingestion, explicit data-quality gates,
-safe reruns, and reproducible analytical outputs.
+Each source moves through its own source, Bronze, and Silver gates. Integration
+begins only after all required Silver gates pass.
 
-> **Status:** Active development. Source profiling, architecture, ingestion
-> contracts, and the Gold model are documented. The complete pipeline has not
-> yet been orchestrated and validated end to end.
+When a blocking check fails, that task fails and dependent trusted layers do
+not run. Think of each gate as a checkpoint: data must pass inspection before it
+can move to the next area.
 
 ## Data sources
 
 | Source | Purpose | Format |
 |---|---|---|
-| [NYC TLC Green Taxi records](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) | Trip-level mobility activity | Parquet |
-| [Open-Meteo Historical API](https://open-meteo.com/en/docs/historical-weather-api) | Hourly NYC weather observations | JSON |
-| [NYC Taxi Zone lookup](https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv) | Pickup and drop-off zone reference | CSV |
+| NYC TLC Green Taxi | Recorded trip and mobility activity | Parquet |
+| Open-Meteo archive | Hourly citywide weather approximation | JSON |
+| NYC Taxi Zones | Pickup and drop-off zone reference data | CSV |
 
-The official source registry is maintained in
-[`config/sources.json`](config/sources.json).
+The approved source registry is maintained in
+[`config/sources.json`](config/sources.json). Required structures and minimum
+acceptance rules are defined in
+[`config/source_contract.json`](config/source_contract.json).
 
-Raw source data is stored in the class R2-backed Databricks Volume. Raw datasets
-and large outputs are not committed to GitHub.
+Traffic advisories were evaluated and deliberately deferred. They are not a
+dependency of the implemented pipeline.
 
-## Platform configuration
+## How the data changes
 
-| Setting | Value |
+| Layer | Responsibility |
 |---|---|
-| Platform | Databricks |
-| Catalog | `ftw-week-08` |
-| Source schema | `00-source` |
-| Source Volume | `group_a_source` |
-| Volume path | `/Volumes/ftw-week-08/00-source/group_a_source/` |
-| Reporting timezone | `America/New_York` |
-| Proof period | March–May 2026 |
-| Implementation languages | Python and SQL |
+| Control | Tracks pipeline runs, ingestion batches, source versions, and quality results |
+| Source gate | Uses DuckDB to inspect files before ingestion |
+| Bronze | Preserves accepted source records with ingestion metadata |
+| Silver | Cleans, standardizes, deduplicates, and quarantines invalid records |
+| Integration | Aligns sources before dimensional modeling |
+| Gold | Publishes conformed facts and dimensions |
+| Analytics | Produces datasets designed for reporting and dashboards |
 
-Expected source layout:
+For field-level lineage, see the
+[source-to-target mapping](docs/architecture/source-to-target.md).
 
-```text
-/Volumes/ftw-week-08/00-source/group_a_source/
-├── green_taxi/
-├── taxi_zones/
-├── weather/
-└── traffic_advisory/
+## Data products
+
+### Gold layer
+
+| Table | Grain |
+|---|---|
+| `fact_taxi_trip` | One accepted Green Taxi trip |
+| `fact_weather_hourly` | One coordinate, UTC observation hour, and weather model |
+
+Shared dimensions include:
+
+- `dim_date`
+- `dim_hour`
+- `dim_taxi_zone`
+- `dim_weather_classification`
+
+Weather remains at hourly grain so its measurements are not multiplied by the
+number of trips in the same hour.
+
+### Analytics layer
+
+The pipeline publishes:
+
+- `activity_by_time_and_zone`
+- `trip_behavior_by_weather`
+- `trip_weather_coverage`
+- `mobility_patterns_by_zone`
+
+See the [data model](docs/architecture/data-model.md) and
+[data dictionary](docs/architecture/data-dictionary.md) for the complete
+contracts.
+
+## Project status
+
+### What is implemented
+
+- Three source-specific DuckDB gates before Bronze ingestion
+- Control, Bronze, Silver, Integration, Gold, and Analytics transformations
+- A multi-task Databricks Asset Bundle
+- Separate development and production targets
+- Data-quality, analytics, and pipeline-execution dashboards
+- Local and CI contract tests
+- GitHub Actions validation and controlled deployment workflows
+- Operational monitoring, recovery instructions, and governance documentation
+
+### What is proven
+
+Committed evidence records:
+
+- a complete end-to-end run;
+- March → April → May incremental loading;
+- an identical-input rerun;
+- controlled failure and recovery;
+- a blocked pre-Bronze delivery;
+- DuckDB-to-Bronze reconciliation;
+- deployed runs tied to recorded code revisions.
+
+See the [evidence index](evidence/README.md) for the relevant run IDs, revisions,
+results, and limitations.
+
+> Repository state and deployed workspace state are different. A commit on
+> `main` should not be described as live until its deployed revision and
+> resulting Databricks run have been verified.
+
+## Getting started
+
+### Prerequisites
+
+For local repository validation:
+
+- Git
+- Python 3
+- access to this repository
+
+For Databricks bundle validation:
+
+- Databricks CLI
+- an approved workspace profile
+- the required workspace permissions
+
+See the complete [terminal setup guide](docs/getting-started/terminal-setup.md).
+
+### Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/hyenalouise/nyc-mobility-pipeline.git
+cd nyc-mobility-pipeline
 ```
 
-Traffic advisories are optional and are not part of the required pipeline.
+Install the local validation dependencies:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+### Run local checks
+
+```bash
+python3 -m pytest tests
+git diff --check
+```
+
+The full Databricks pipeline does not run locally. These checks validate
+repository contracts and DuckDB source-gate behavior.
+
+They do not prove:
+
+- Spark or Delta runtime behavior;
+- Unity Catalog permissions;
+- SQL warehouse availability;
+- deployed job configuration;
+- production execution.
+
+## Usage
+
+### Validate the Databricks bundle
+
+Development target:
+
+```bash
+databricks bundle validate \
+  --target dev \
+  --profile crystal-workspace
+```
+
+Production target:
+
+```bash
+databricks bundle validate \
+  --target prod \
+  --profile crystal-workspace
+```
+
+Bundle validation is read-only. Deployment and job execution change external
+state and must follow the approved workflow.
+
+Before deploying or running the pipeline, review:
+
+- [Job setup](docs/operations/job-setup.md)
+- [Development workflow](docs/operations/workflow.md)
+- [Deployment process](docs/operations/deployment.md)
+- [Monitoring guide](docs/operations/monitoring.md)
+- [Failure runbook](docs/operations/runbook.md)
 
 ## Repository structure
 
 ```text
 nyc-mobility-pipeline/
-
-├── README.md                 # project overview, setup, execution steps
-├── CONTRIBUTING.md           # contribution workflow and development rules
-├── databricks.yml            # Databricks Asset Bundle job definition and task graph
-├── requirements-dev.txt      # development dependencies
-
-├── .github/                  # CI pipeline, issue templates and PR templates
-
-├── config/                   # project configuration, naming rules and source definitions
-│   ├── naming.yml            # naming standards used across the project
-│   ├── project.json          # project-level configuration
-│   └── sources.json          # source system definitions
-
-├── dashboards/              # business-facing dashboards and dashboard assets
-│   ├── README.md            # dashboard documentation and usage notes
-│   ├── 11_data_quality_dashboard/
-│   │   └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
-│   │                         # Databricks dashboard definition
-│   ├── 11_analytics_dashboard/
-│   │   └── 10_NYC_mobility_analytics_dashboard.lvdash.json
-│   │                         # Databricks dashboard definition
-│   └── 11_pipeline_execution_monitoring/
-│       └── 10_NYC_mobility_pipeline_execution_dashboard.lvdash.json
-│                             # Databricks dashboard definition
-
-├── docs/                    # architecture, model, validation and decision records
-│   ├── architecture.md
-│   ├── data_dictionary.md
-│   ├── data_model.md
-│   ├── decisions.md
-│   ├── ingestion.md
-│   ├── job_setup.md
-│   ├── monitoring_layers.md
-│   ├── naming_conventions.md
-│   ├── source_profile.md
-│   ├── source_to_target_mapping.md
-│   └── validation.md
-
-├── etl/                     # pipeline implementation in execution order
-│   ├── 01_control/          # control tables, run tracking, shared DQ contract and control gate
-│   ├── 02_bronze/           # source ingestion and Bronze validation gates
-│   ├── 03_silver/           # cleaning, standardization and Silver validation gates
-│   ├── 04_integration/      # trip-to-zone and trip-to-weather relationship resolution
-│   ├── 05_gold/             # dimensions, facts and Gold validation gate
-│   └── 06_analytics/        # business-question datasets and Analytics validation gate
-
-├── evidence/               # validation and operational proof artifacts
-│   └── proof/
-│       ├── 2026-09-19-failure-restart.md
-│       ├── 2026-09-19-full-pipeline-run.md
-│       ├── 2026-09-19-idempotency.md
-│       └── 2026-09-19-incremental.md
-
-├── notebooks/              # profiling, investigation and exploratory analysis
-│   ├── profile_green_taxi.ipynb
-│   ├── profile_weather.ipynb
-│   └── join_coverage_analysis.ipynb
-
-├── src/                    # reusable Python helpers
-│   └── ingestion/
-│       ├── batch_tracking.py
-│       └── schema_drift_check.py
-
-└── tests/                  # repository policy and automated test suite
-    ├── test_green_taxi_deduplication_policy.py
-    ├── test_notebook_source_format.py
-    └── test_repo_policy.py
+├── .github/               Pull-request templates, CI, and deployment workflows
+├── config/                Source registry and source contracts
+├── dashboards/            Databricks dashboard definitions
+├── docs/                  Architecture, data, operations, and governance
+├── etl/                   SQL transformations organized by pipeline stage
+├── evidence/
+│   ├── pipeline-runs/     Human-readable run evidence
+│   └── source-validation/ Machine-readable source-gate results
+├── notebooks/             Profiling and investigation notebooks
+├── src/ingestion/         DuckDB source-gate implementation and helpers
+├── tests/                 Repository and pipeline contract tests
+├── databricks.yml         Databricks job, target, and dashboard configuration
+└── requirements-dev.txt   Local validation dependencies
 ```
 
-Each layer folder holds numbered files that run in order: loaders or transforms
-first, then `90_validate_<source>` as that layer's gate. A gate raises on failure,
-so the task fails and everything downstream is skipped.
+The numbered `etl/` folders describe the intended processing order. The task
+dependencies defined in `databricks.yml` remain the executable authority.
 
+## Documentation guide
 
-### Directory responsibilities
-
-| Location | Responsibility |
+| I want to… | Read |
 |---|---|
-| `config/` | Approved non-secret project, naming, and source configuration |
-| `src/ingestion/` | Unused. Superseded by the SQL loaders in `etl/02_bronze/` |
-| `etl/` | Ordered SQL tasks, one folder per pipeline stage |
-| `notebooks/` | Source profiling and limited investigation |
-| `tests/` | Policy, source-format, and reusable-code tests |
-| `docs/` | Canonical architecture, model, mapping, ingestion, and validation decisions |
-| `evidence/proof/` | Reviewed run, reconciliation, and rerun evidence |
-
-Every file under `etl/` is SQL. Business logic lives there and is not duplicated
-into notebooks. Commit notebooks in Databricks source format, not `.ipynb`, so
-pull requests show readable diffs and no cell output is committed.
-
-### Known limitations
-
-Every stage from Control through Analytics is implemented and runs. What follows
-is what a reader should not assume.
-
-| | |
-|---|---|
-| `src/ingestion/*.py` | **Unused.** The Bronze loaders were rewritten as SQL. `batch_tracking.py` and `schema_drift_check.py` remain in the tree but nothing imports them. |
-| Landing paths | Literals inside `read_files`, which cannot take a variable. Staging a subset of files for a test means moving files in the Volume. |
-| `code_revision` | Every gate takes it from the job parameter of the same name, declared once at job level in `databricks.yml` and resolved at deploy time from `${bundle.git.commit}`. A gate run by hand with no value records `'UNSET'`. |
-| Schema drift | A **missing** source column fails loudly; a **new** one is silently ignored by the explicit column lists. |
-| Weather coverage | The series was requested in UTC while trips are local, so 180 trips have no weather hour. Weather measures cover 133,173 of 133,353 (D20). |
-| `supersedes_batch_id` | The column exists and is not populated (D24). |
-| NYC DOT advisories | Deferred (D02). No traffic fact, dimension or bridge exists. |
-
-## Architecture and tables
-
-| Stage | Purpose | Code | Destination |
-|---|---|---|---|
-| 00 Source | Immutable source files | R2-backed Volume | No project tables |
-| 01 Control | Runs, batches, checkpoints, and DQ results | `etl/01_control/` | `01-control` |
-| 02 Bronze | Source-preserving records with provenance | `etl/02_bronze/` | `02-bronze` |
-| 03 Silver | Typed, standardized, and quality-reviewed records | `etl/03_silver/` | `03-silver` |
-| 04 Integration | Resolve trips to zones and weather | `etl/04_integration/` | Published through Gold |
-| 05 Gold | Approved facts and dimensions | `etl/05_gold/` | `05-gold` |
-| 06 Analytics | Business-question datasets | `etl/06_analytics/` | `06-analytics` |
-
-Stage numbers describe execution order. Stage 00 creates no project tables.
-Stage 04 does not have its own schema because integration enriches trips without
-introducing a separate analytical grain.
-
-## Gold model
-
-The approved model contains two facts and four shared dimensions:
-
-| Table | Grain |
-|---|---|
-| `fact_taxi_trip` | One row per accepted Green Taxi trip |
-| `fact_weather_hourly` | One row per coordinate, UTC observation hour, and weather model |
-| `dim_date` | One row per NYC-local calendar date |
-| `dim_hour` | One row per hour from 0 through 23 |
-| `dim_taxi_zone` | One row per Taxi Zone `LocationID` |
-| `dim_weather_classification` | One row per weather-code and precipitation-band combination |
-
-Taxi and weather facts do not join directly. A trip receives the weather
-classification associated with its pickup hour. Temperature and precipitation
-remain in `fact_weather_hourly`, preventing those measurements from being
-multiplied across trip rows.
-
-See [`docs/data_model.md`](docs/data_model.md) for keys, measures, nullable
-relationships, classifications, and business-question mappings.
-
-## Quick start
-
-### 1. Prerequisites
-
-You need:
-
-- Git and access to this repository.
-- Access to the team Databricks workspace.
-- Permission to use the `ftw-week-08` catalog.
-- Read access to the `group_a_source` Volume.
-- A personal Databricks Git folder.
-- An assigned GitHub issue and reviewer.
-
-The full pipeline cannot currently run locally because it depends on Spark,
-Unity Catalog, Databricks Volumes, and `dbutils`.
-
-### 2. Clone the repository
-
-```bash
-git clone https://github.com/hyenalouise/nyc-mobility-pipeline.git
-cd nyc-mobility-pipeline
-git switch main
-git pull --ff-only
-```
-
-Create one branch for one issue:
-
-```bash
-git switch -c <type>/issue-<number>-<short-description>
-```
-
-Example:
-
-```bash
-git switch -c ingestion/issue-20-taxi-files
-```
-
-### 3. Review configuration
-
-The tracked non-secret configuration files are:
-
-```text
-config/project.json
-config/naming.yml
-config/sources.json
-```
-
-For temporary personal overrides:
-
-```bash
-cp config/project.json config/project.local.json
-```
-
-`config/project.local.json` is ignored by Git.
-
-Never store Databricks tokens, R2 credentials, passwords, or other secrets in
-project configuration.
-
-### 4. Create a Databricks Git folder
-
-In Databricks:
-
-1. Create a personal Git folder using this repository URL.
-2. Authenticate using your GitHub account.
-3. Check out your assigned branch.
-4. Attach approved class compute.
-5. Confirm access to the catalog and source Volume.
-
-Do not share Databricks Git folders between developers.
-
-### 5. Verify access
-
-Run in a Databricks SQL cell:
-
-```sql
-SHOW SCHEMAS IN `ftw-week-08`;
-```
-
-Run in a Python cell:
-
-```python
-display(
-    dbutils.fs.ls(
-        "/Volumes/ftw-week-08/00-source/group_a_source/"
-    )
-)
-```
-
-Expected folders include:
-
-```text
-green_taxi
-taxi_zones
-weather
-```
-
-If access fails, stop and request access. Do not replace approved shared paths
-with personal paths in committed code.
-
-## Execution order
-
-Run approved entry points in this order:
-
-```text
-01 Control
-→ 02 Bronze
-→ Bronze validation (per source)
-→ 03 Silver
-→ Silver validation (per source)
-→ 04 Integration
-→ Integration validation
-→ 05 Gold dimensions
-→ 05 Gold facts
-→ Gold validation
-→ 06 Analytics
-→ Analytics validation
-```
-
-Within a stage:
-
-```text
-00  Setup or table creation
-10  First task
-20  Next task
-30  Next task
-90  Validation gate: one file per source in Bronze and Silver;
-    one file per stage from Integration onward
-```
-
-Do not run a downstream trusted stage while an upstream critical validation is
-failing. In Bronze and Silver, a source may advance when its own gate passes;
-Integration and Gold require every source's Silver gate to pass. See
-[`docs/validation.md`](docs/validation.md).
-
-## Naming rules
-
-All persisted tables must use fully qualified references:
-
-```sql
-SELECT *
-FROM `ftw-week-08`.`02-bronze`.`green_taxi_raw`;
-```
-
-Catalog and schema names require backticks because they contain hyphens and
-begin with numbers.
-
-Do not depend on a previous `USE CATALOG` or `USE SCHEMA` command.
-
-Outside source-preserving Bronze fields:
-
-- Use lowercase `snake_case`.
-- Use `_id` for identifiers.
-- Use `_at` for timestamps.
-- Use `_date` for dates.
-- Use `_count` for counts.
-- Use `_amount` for currency.
-- Use `_flag` for Boolean indicators.
-
-## Validation requirements
-
-Every data-affecting pull request must include:
-
-- Source version, checksum, or request window.
-- Databricks Runtime used.
-- Source and target row counts.
-- Accepted, rejected, and quarantined counts.
-- Duplicate and key-uniqueness checks.
-- Null and required-field checks.
-- Measure reconciliation where applicable.
-- Evidence that records were not silently dropped.
-- Rerun or idempotency evidence where applicable.
-- Anything not yet validated.
-
-An identical-input rerun must preserve business content and must not create
-duplicates. Equal row counts alone do not prove idempotency.
-
-Commit small reviewed evidence under:
-
-```text
-evidence/proof/
-```
-
-Do not commit raw datasets, full table exports, notebook result data, or large
-execution logs.
-
-## Local checks
-
-Run the same checks as CI before opening a pull request:
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest tests
-git diff --check
-```
-
-`tests/test_repo_policy.py` checks:
-
-- `.py`, `.json` and `.yml` files parse
-- no `.ipynb` outside `notebooks/`
-- files under `etl/` follow `NN_lowercase_name.sql` or `.py` in a known layer folder
-- Python files under `etl/` are Databricks source-format notebooks
-- table names do not begin with a digit (the `90_` prefix is for file names only)
-- no trailing whitespace, except on Databricks markdown lines (`# MAGIC` / `-- MAGIC`), where two trailing spaces are a Markdown line break
-- schema references include the catalog
-
-Test files that are Databricks notebooks are skipped locally (see
-`tests/conftest.py`) and run in Databricks.
-
-### Continuous integration
-
-`.github/workflows/ci.yml` runs on every pull request to `main` and on every
-push to `main`:
-
-| Job | Fails when |
-|---|---|
-| Repository checks | `git diff --check` finds whitespace errors, or `python -m pytest tests` fails |
-| Local source-gate runs | `src/ingestion/source_gate.py`, run against generated sample Green Taxi files, doesn't accept a clean delivery, doesn't block a bad one with the right exit code, or a blocked result would still reach a *simulated* publish step |
-| PR links an issue | The PR description has no `Closes #N`, `Part of #N`, or `Related to #N` |
-
-CI does not connect to Databricks — Local source-gate runs proves the
-pre-ingestion gate's own logic against generated sample files, not the real
-Silver/Gold SQL, and it has no persisted run history across invocations, so
-it cannot prove a rerun skips publishing a duplicate; that guarantee is
-Bronze's own content-hash MERGE key (`docs/decisions.md`), not this check's
-job. Its publish-gating step is simulated too — no Databricks credentials
-exist in CI, so it proves the gating *pattern*, not that the real Bronze
-loader refuses a blocked delivery.
-
-## Development workflow
-
-Start from current `main`:
-
-```bash
-git switch main
-git pull --ff-only
-git switch -c <type>/issue-<number>-<short-description>
-```
-
-Review changes before committing:
-
-```bash
-git status
-git diff
-git diff --check
-```
-
-Commit only intended files:
-
-```bash
-git add <specific-paths>
-git commit -m "<clear description>"
-git push -u origin <branch-name>
-```
-
-Every pull request must:
-
-- Include `Closes #<issue-number>`.
-- Explain what changed and why.
-- Explain what was run or checked.
-- Include counts or evidence when data is affected.
-- Identify anything not yet validated.
-- Receive the assigned teammate’s review.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for ownership, branch naming, and
-review rules.
-
-## Documentation map
-
-| Document | Purpose |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Stage-by-stage data flow |
-| [`docs/naming_conventions.md`](docs/naming_conventions.md) | Catalog, schemas, tables, columns, and paths |
-| [`docs/data_model.md`](docs/data_model.md) | Facts, dimensions, grains, keys, and measures |
-| [`docs/data_dictionary.md`](docs/data_dictionary.md) | Target fields, types, and business meanings |
-| [`docs/source_profile.md`](docs/source_profile.md) | Observed source structure and quality |
-| [`docs/source_to_target_mapping.md`](docs/source_to_target_mapping.md) | Source-to-target transformations |
-| [`docs/ingestion.md`](docs/ingestion.md) | Batch identity, reruns, and recovery |
-| [`docs/validation.md`](docs/validation.md) | Required checks and acceptance evidence |
-| [`docs/decisions.md`](docs/decisions.md) | Accepted decisions and rejected alternatives |
-| [`docs/job_setup.md`](docs/job_setup.md) | How to wire the pipeline as a Databricks job, task by task |
-| [`docs/monitoring_layers.md`](docs/monitoring_layers.md) | Every monitored signal, its threshold, and the response when it trips |
-| [`docs/workflow.md`](docs/workflow.md) | How to work on this repository: Databricks Git folders, GitHub, the terminal, deploying and checking |
-| [`docs/terminal_setup.md`](docs/terminal_setup.md) | Terminal and Databricks CLI from zero, so more than one of us can deploy |
-
-If documentation and implementation disagree, stop and resolve the discrepancy
-through the relevant issue. Do not silently choose one.
-
-## Security and repository hygiene
-
-Never commit:
-
-- Databricks tokens.
-- R2 credentials.
-- Passwords or secret values.
-- `.databrickscfg`.
-- Raw Parquet, CSV, or JSON datasets.
-- Local processing state.
-- Notebook outputs containing data or configuration.
-- Large generated evidence.
-
-GitHub stores code, documentation, non-secret configuration, and compact
-reviewed evidence. R2 and Databricks store source data and persisted tables.
-
-## Remaining handoff requirements
-
-Before claiming a reproducible end-to-end pipeline, the project must:
-
-- Pin the supported Databricks Runtime.
-- Pin external Python dependencies, if any.
-- Implement all required ETL files.
-- Provide one orchestration job or exact manual runbook.
-- Run March, April, and May in order.
-- Prove identical-input rerun safety.
-- Demonstrate recovery after a controlled failure.
-- Reconcile final Bronze, Silver, Gold, and Analytics outputs.
-
-Progress and ownership are tracked through the
-[GitHub Project board](https://github.com/users/hyenalouise/projects/3) and
-[repository issues](https://github.com/hyenalouise/nyc-mobility-pipeline/issues).
+| Understand the complete pipeline | [Architecture overview](docs/architecture/overview.md) |
+| Understand tables and relationships | [Data model](docs/architecture/data-model.md) |
+| Inspect columns and measures | [Data dictionary](docs/architecture/data-dictionary.md) |
+| Understand ingestion and reruns | [Ingestion guide](docs/data/ingestion.md) |
+| Understand validation gates | [Validation contract](docs/data/validation.md) |
+| Inspect the Databricks task graph | [Job setup](docs/operations/job-setup.md) |
+| Make and deliver a change | [Workflow](docs/operations/workflow.md) |
+| Respond to a failure | [Runbook](docs/operations/runbook.md) |
+| Understand ownership | [Ownership and governance](docs/governance/ownership.md) |
+| See why a decision was made | [Decision log](docs/governance/decisions.md) |
+| Understand DuckDB's role | [DuckDB documentation](docs/tools/duckdb/README.md) |
+| Review recorded results | [Evidence index](evidence/README.md) |
+
+The complete canonical documentation map is in
+[`docs/README.md`](docs/README.md).
+
+## Known limitations
+
+- Weather represents one documented NYC coordinate rather than a separate
+  observation for every Taxi Zone.
+- The UTC weather series and NYC-local trip timestamps create a documented
+  boundary-coverage gap; see the [decision log](docs/governance/decisions.md)
+  and [validation contract](docs/data/validation.md).
+- Traffic-advisory analysis remains deferred.
+- Local and CI tests cannot prove live workspace permissions or runtime
+  behavior.
+- A repository change is not production evidence until the deployed revision
+  and resulting run are verified.
+- The course workspace does not yet fully implement the intended
+  least-privilege access model.

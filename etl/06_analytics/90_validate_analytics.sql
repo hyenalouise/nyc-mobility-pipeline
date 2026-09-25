@@ -5,7 +5,7 @@
 -- Runs after: the three analytics datasets
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract, D17)
+-- Contract:  docs/data/validation.md (shared result contract, D17)
 --
 -- Dashboards use validated Analytics results only.
 --

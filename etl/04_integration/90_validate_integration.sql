@@ -5,7 +5,7 @@
 -- Runs after: etl/04_integration/20_resolve_trip_weather.sql
 -- Target:    `ftw-week-08`.`01-control`.data_quality_results
 -- Grain:     one row per check per run
--- Contract:  docs/validation.md (shared result contract, D17)
+-- Contract:  docs/data/validation.md (shared result contract, D17)
 --
 -- The first stage that needs every source, so it opens by asserting all
 -- three Silver gates passed rather than trusting run order. Gold runs only
