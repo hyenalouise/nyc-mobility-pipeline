@@ -10,7 +10,7 @@ Bronze and Silver are validated **per source**, not once per layer. Each source 
 
 | Layer | Gate unit | Validation file |
 |---|---|---|
-| Source (before Bronze) | One gate per source with a contract (Green Taxi, Taxi Zones) | `src/ingestion/source_gate.py`, run as a job task (#148) |
+| Source (before Bronze) | One gate per source with a contract (Green Taxi, Taxi Zones, Open-Meteo) | `src/ingestion/source_gate.py`, run as a job task (#148, #152) |
 | Bronze | One gate per source | `etl/02_bronze/90_validate_<source>` |
 | Silver | One gate per source | `etl/03_silver/90_validate_<source>` |
 | Integration | One gate for all sources combined | `etl/04_integration/90_validate_integration` |
@@ -23,6 +23,7 @@ Bronze and Silver are validated **per source**, not once per layer. Each source 
 |---|---|
 | Bronze `green_taxi` load | Source `green_taxi` |
 | Bronze `taxi_zones` load | Source `taxi_zones` |
+| Bronze `open_mateo` load | Source `weather` |
 | Silver `green_taxi` | Bronze `green_taxi` |
 | Silver `weather_hourly` | Bronze `open_meteo` |
 | Silver `taxi_zones` | Bronze `taxi_zones` |
