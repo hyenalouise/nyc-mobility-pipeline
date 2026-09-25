@@ -19,11 +19,10 @@ flowchart TD
 
 Kept separate because they answer different questions:
 
-- **Execution** — did it run: status, failures, duration, recency of the runs. Read from `pipeline_runs` and the Pipeline
-  Execution dashboard.
-- **Data** — is it correct: blocking failures, warnings trending toward
-  tolerance, row-count anomalies, join coverage. Read from
-  `data_quality_results` and the Data Quality dashboard.
+- **Execution** — did it run: status, failures, duration, recency of the runs. Read from `pipeline_runs` and the Pipeline Execution dashboard.
+- **Data** — is it correct: blocking failures, warnings trending toward tolerance, row-count anomalies, join coverage. Read from `data_quality_results` and the Data Quality dashboard.
+
+Both dashboards read tables that every `dev` and `prod` job write to, so a failed or slow run on them may be a teammate's test in their own sandbox. Before acting, open the run in the Jobs UI and check whether it was the `NYC Mobility Pipeline` job (prod) or a `[dev ...]` one.
 
 
 ## Execution layer: did it run?
@@ -42,10 +41,10 @@ Kept separate because they answer different questions:
 |---|---|---|---|
 | Blocking failures | "Open Issues — Failures & Warnings," "FAIL Checks" counter, "Datasets Validated," "PASS Checks Trend Over Time," "Latest Run Timestamp by Layer" | `severity = 'FAIL'`: any `fail_count > 0` blocks the gate immediately (0% tolerance). The three context widgets carry no threshold of their own — they support diagnosis, not alerting: "Datasets Validated" and "PASS Checks Trend Over Time" show whether a drop in passing checks lines up with the failure, and "Latest Run Timestamp by Layer" shows whether every layer actually ran this cycle. | The gate has already stopped the pipeline. Open the failing row's `details` column, find the check in its source file (`docs/job_setup.md`'s Tasks table maps task key to file), fix the upstream data or logic, rerun. If "Latest Run Timestamp by Layer" shows a layer missing entirely, the pipeline stopped before reaching it — check the earlier gate instead. |
 | Warnings trending toward tolerance | "WARN Checks" counter, "Failures By Check Type" | `severity = 'WARN'` checks each carry their own `threshold_pct` — mostly known one-off anomalies at 0.1% (e.g. `dropoff_before_pickup`, `passenger_count_gt_8`, `vendor_id_domain`), a few lifecycle checks at 0.0%. If `fail_pct` exceeds `threshold_pct`, the check becomes `FAIL` and blocks the gate exactly like a hard failure — a WARN is not a free pass, it's a budget. | Watch "Failures By Check Type" for a check's `fail_count` climbing across runs, not just its current value. A WARN sitting near its tolerance is the leading indicator that the next run could block. |
-| Row-count anomalies | Reconciliation checks (`source_to_bronze_row_count`, `bronze_to_silver_row_reconciliation`, `row_count_reconciles_to_silver`, etc.), "Data Quality Checks By Dataset," "Failure Checks By Dataset" | `severity = 'FAIL'`, 0% tolerance — any mismatch at any layer boundary blocks | Identify which layer boundary failed from the `layer`/`dataset` columns, then rerun the loader or transform for that stage. To test a fix without touching landing data, use the gate's input-parameter override (`docs/job_setup.md`, #158). |
-| Join coverage | Integration gate: `zone_map_covers_every_trip`, `weather_map_covers_every_trip`, `no_ambiguous_weather_match`; unmatched volumes are `INFO` measurements (`pickup_zone_unmatched`, `weather_unmatched`) | Coverage gaps themselves are measured, not failed — an unmatched trip is a real fact (missing source id, unresolved location, etc.), not an error. What blocks is fan-out, a changed grain, or an *ambiguous* weather match. | An unmatched count is expected in normal operation. There is currently no trend view for these `INFO` measurements — see "Not monitored." An ambiguous-match or grain failure blocks the gate the same way a data-layer failure does: treat it as a blocking failure above. |
+| Row-count anomalies | Reconciliation checks (`source_to_bronze_row_count`, `bronze_to_silver_row_reconciliation`, `row_count_reconciles_to_silver`, etc.), "Data Quality Checks By Dataset," "Failure Checks By Dataset" | `severity = 'FAIL'`, 0% tolerance — any mismatch at any layer boundary blocks | Identify which layer boundary failed from the `layer`/`dataset` columns, then rerun the loader or transform for that stage. The input-parameter override (`docs/job_setup.md`) only reaches the three source gates, and an override run never loads — so it can't test a fix at a Bronze→Silver or Silver→Gold boundary. After the fix, rerun the job normally; already-loaded files aren't loaded again, so the rerun is safe. |
+| Join coverage | Integration gate: `zone_map_covers_every_trip`, `weather_map_covers_every_trip`, `no_ambiguous_weather_match`; unmatched volumes are `INFO` measurements (`pickup_zone_unmatched`, `weather_unmatched`) | Coverage gaps themselves are measured, not failed — an unmatched trip is a real fact (missing source id, unresolved location, etc.), not an error. What blocks is fan-out, a changed grain, or an *ambiguous* weather match. | An unmatched count is expected in normal operation. There is currently no trend view for these `INFO` measurements — see "What's not monitored" section. An ambiguous-match or grain failure blocks the gate the same way a data-layer failure does: treat it as a blocking failure above. |
 
-## Future considerations / What's not monitored
+## Future considerations
 
 - **Run Retries Signal.** A retry-count column was considered — tracking how many
   times a run had to be retried before succeeding — but was reverted. As
@@ -66,3 +65,10 @@ Kept separate because they answer different questions:
 - **Duration-based alerting.** No threshold is configured for run
   duration; a slow run is currently only visible if someone happens to
   look at the trend chart.
+
+## What's not monitored
+
+- **Only one thing pushes an alert:** the failure email (`email_notifications.on_failure`). Everything else in this doc is a dashboard someone has to open.
+- **A hung run sends nothing.** A task stuck waiting on compute (like the serverless Spark "Pending" hang in `evidence/proof/2026-09-25-source-gate-blocked-run.md`) never fails, so no email goes out, and cancelling it sends none either. `no_stuck_runs` only catches it after 6 hours, the next time the Control gate runs.
+- **No trend view for `INFO` measurements** such as `pickup_zone_unmatched` and `weather_unmatched`. Their values are recorded every run, but nothing charts them over time.
+
