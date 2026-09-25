@@ -12,7 +12,7 @@ These values come from `databricks.yml`. If the two disagree, `databricks.yml` i
 | Source | Git provider, this repository, pinned to the commit that was deployed (`${bundle.git.commit}`), not a branch |
 | Compute | 34 tasks. One SQL warehouse, `${var.warehouse_id}`, runs the 28 SQL file tasks and 3 dashboard tasks. The 3 source-gate tasks are Python, so they run on serverless job compute (environment `source_gate`, `duckdb==1.1.3`). No clusters |
 | Parameters | `code_revision`, which defaults to the deployed commit so every quality result records the code that produced it (D25). `green_taxi_input`, `taxi_zones_input` and `weather_input`, which default to the landing paths the loaders read, and can point one gate at a test folder (#158) |
-| Schedule | Weekly, Monday 06:00 `America/New_York`. Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
+| Schedule | Weekly, Friday 11:30 `America/New_York` (23:30 Manila on EDT, 00:30 Saturday on EST). Paused in `dev`, running in `prod`. Weekly because the source is monthly, so a daily run would find nothing new most days (D27) |
 | Notifications | Email on failure. In `dev`, only the person who deployed it (`${workspace.current_user.userName}`); in `prod`, the whole team, since that's a shared pipeline (#131) |
 
 Using the Git provider rather than a personal Git folder means every run uses reviewed code and records the commit it ran.

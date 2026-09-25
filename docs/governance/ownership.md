@@ -492,8 +492,8 @@ Source-gate rows do not yet have a Bronze `batch_id` or `source_version_id`, bec
 
 | Environment | Current state | Schedule |
 |---|---|---|
-| Development | Personal bundle target; deployed state varies by contributor | Paused by configuration |
-| Production | Shared bundle target; verify deployed revision and latest run in Databricks | Configured weekly on Monday at 06:00 `America/New_York` |
+| Development | Personal bundle target; deployed state varies by contributor | Paused by configuration under D27; runs are manually initiated |
+| Production | Shared bundle target; verify deployed revision and latest run in Databricks | Configured weekly on Friday at 11:30 `America/New_York` |
 
 Historical run counts belong in run-specific evidence, not in this living
 governance document.

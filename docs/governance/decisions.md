@@ -55,7 +55,7 @@ This log explains why choices were made. Detailed implementation contracts live 
 | D24 | Add a `SUPERSEDED` batch status for content that was later reloaded | Approved | A reload no longer reads as double processing, and the earlier attempt stays auditable |
 | D25 | Supply `code_revision` to every gate from one job-level parameter, assigned to the existing session variable | Approved | Every quality result traces to the commit that produced it, with a one-line change per gate |
 | D26 | Add a `no_stuck_runs` check to the Control gate, detecting abandoned pipeline runs | Approved | A run left STARTED past `stuck_after_hours` now fails the gate instead of going unnoticed |
-| D27 | Run the job weekly, Monday 06:00 New York time, and let the target decide whether the schedule is paused | Approved | The job runs without someone starting it, and freshness has an interval to be measured against |
+| D27 | Run the job weekly at Friday 11:30 New York time, and let the target decide whether the schedule is paused | Approved; amended 2026-09-25 | The run lands at the end of the team's week in Manila; the source is monthly, so a daily run would find nothing new most days |
 | D28 | Report negative fares in the pre-ingestion source gate as INFO instead of blocking on a threshold | Approved through Issue #147 | The gate accepts the March–May delivery the pipeline already loads; negative fares are still counted in its evidence |
 | D29 | Block on trips that end before they start, not on zero-length trips; keep the distance and passenger checks as they are | Approved through Issue #153 | A month with a few more zero-length trips no longer stops the scheduled run, and a delivery with reversed timestamps still does |
 
@@ -1052,6 +1052,12 @@ version 21) as part of this same cleanup.
 
 **Status:** Approved
 **Decision date:** 2026-09-23
+
+**Amendment, 2026-09-25:** The configured schedule moved from Monday 06:00 to
+Friday 11:30 `America/New_York`, which is 23:30 in Manila while New York is on
+EDT and 00:30 the following day while New York is on EST. It remains weekly for
+the same source-cadence and freshness reasons recorded below. The timezone
+remains New York, the reporting timezone.
 
 **Decision:**
 
