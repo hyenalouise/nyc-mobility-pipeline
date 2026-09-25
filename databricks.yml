@@ -483,13 +483,14 @@ resources:
       notification_settings:
         no_alert_for_canceled_runs: true
 
-      # Weekly, Monday 06:00 New York time (D27). The source is monthly, so
-      # a daily run would find nothing new on almost every day; weekly bounds
+      # Weekly, Friday 11:30 New York time (D27, amended: Friday 23:30 Manila
+      # while New York is on EDT, 22:30 on EST). The source is monthly, so a 
+      # daily run would find nothing new on almost every day; weekly bounds
       # how long a newly landed file waits to one week, and gives freshness
       # monitoring an interval to measure against.
       #
       # Quartz syntax, not crontab: seconds first, and `?` in the day-of-month
-      # position because day-of-week is set. "0 6 * * 1" would not mean the
+      # position because day-of-week is set. "0 3 * * 1" would not mean the
       # same thing here.
       #
       # No pause_status here, deliberately. Left unset, the target decides:
@@ -497,5 +498,5 @@ resources:
       # a timer, and prod deploys it UNPAUSED. Setting it on the job would
       # override that for every target.
       schedule:
-        quartz_cron_expression: "0 0 6 ? * MON"
+        quartz_cron_expression: "0 30 11 ? * FRI"
         timezone_id: America/New_York

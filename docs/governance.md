@@ -481,7 +481,7 @@ Source-gate rows do not yet have a Bronze `batch_id` or `source_version_id`, bec
 | Environment | Current state | Schedule |
 |---|---|---|
 | Development | Runs are manually initiated | The development schedule is paused by design under D27 |
-| Production | No production job has been deployed and no production runs have occurred | Once deployed, the planned schedule is weekly on Monday at 06:00 `America/New_York` |
+| Production | No production job has been deployed and no production runs have occurred | Once deployed, the planned schedule is weekly on Friday at 11:30 `America/New_York` |
 
 Nineteen observed runs across the three development jobs were reviewed when this document was prepared. Every observed run was initiated manually.
 
