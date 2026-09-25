@@ -32,17 +32,22 @@ For each of `dev` and `prod`, in **Settings -> Environments**:
    - `DATABRICKS_HOST` -- the workspace URL (e.g.
      `https://dbc-cd77c839-62eb.cloud.databricks.com`, matching the `host:`
      already set for that target in `databricks.yml`).
-   - `DATABRICKS_TOKEN` -- a **service principal** token, not a personal
-     access token. A personal token ties every deploy to one person's
-     Databricks account and breaks (or has to be rotated) the moment that
-     person's access changes; a service principal is the team's, not an
-     individual's, and can be scoped to only what the deploy job needs.
-
 Repeat for both environments. `prod`'s required reviewer should generally be
 someone other than whoever tends to dispatch prod deploys, so the approval
 step means something.
 
-## Running the workflow
+## Before the first real deploy
+
+A validate-only run needs nothing beyond the environment secrets. `databricks.yml` sets no `run_as`, so a deployed job runs as whoever deployed it: after the first `deploy: true` from this workflow, the job and its schedule run as the service principal (`github-actions-deploy`). Before that, a workspace admin grants it:
+
+- **Can use** on the SQL warehouse (`bd9af8d40007e504`)
+- access to the `ftw-week-08` catalog, its schemas and tables, and the source Volume, e.g. by adding it to the `ftw-week-09` group
+- permission to run serverless jobs, which the source-gate tasks use
+- read and write on `/Workspace/Shared/.bundle/nyc-mobility-pipeline/prod`, where the prod deployment state lives. Without it, the deploy can't see the existing state and creates a second prod job instead of updating the real one
+
+Prove the grants with a `dev` deploy and one run as the service principal before the first `prod` deploy. In `dev`, the failure email goes to the service principal's own user name, so nobody receives it.
+
+Its token lasts 90 days. Whoever renews it creates a new token for the service principal and replaces `DATABRICKS_TOKEN` in both environments.
 
 **Actions -> CD Deploy -> Run workflow**, then:
 
