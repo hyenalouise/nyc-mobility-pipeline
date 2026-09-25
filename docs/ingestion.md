@@ -277,23 +277,30 @@ Databricks or production access.
 wrong one leads to the wrong recovery action:
 
 - **Retry** — repeat the exact same failed thing, unchanged. Correct when
-  the input is genuinely bad: it should fail the same way again, and it
-  proves the failure is repeatable rather than a fluke.
+  the failure was temporary (a platform or network hiccup, a task stuck
+  waiting for compute), where the same input can succeed on a second try.
+  Retrying a BLOCK on bad data only fails again: useful as proof the
+  failure is real, but not a recovery action.
 - **Rerun** — run the job again after something has changed (a fixed file,
   a corrected configuration, a restored default). This is the normal
   recovery action once the actual problem is addressed.
 - **Backfill** — process a historical period that was missed entirely,
   separate from retrying or rerunning the most recent attempt. 
   
-Backfill needs no separate command or mode in this pipeline. Each loader
-discovers every file already sitting in its landing folder and compares
-each one's content hash against `ingestion_batches`; any file with no
-matching `SUCCESS` batch is treated as new and loads on the very next
-normal run, regardless of what period it covers. If an older month had
-never been delivered and was later placed in the landing folder, running
-the pipeline normally (`databricks bundle run NYC_Mobility_Pipeline
---target dev`) would discover and load it exactly as it would a newly
-arrived current month — the same mechanism, not a special procedure.
+Backfill in this pipeline is a normal run after one deliberate change:
+widening the period the pipeline expects. For Green Taxi, the loader
+already discovers every file in its landing folder and loads any file
+with no matching `SUCCESS` batch in `ingestion_batches`, whatever month
+it covers. But both the source gate and the Bronze gate check pickups
+against the declared window (`reporting_window` in
+`config/source_contract.json`, and the same Mar–May dates in
+`etl/02_bronze/90_validate_green_taxi.sql`), so a file from an older
+month would be blocked as out of window. To backfill: widen that window
+in both places through a reviewed PR, place the missing file in the
+landing folder, then run the job normally. For Weather, change the
+requested window in `20_load_open_meteo.sql` and the matching
+`requested_window` in the contract. Nothing already loaded is reloaded,
+because every loaded file is recognised by its content hash.
 
 ### How to run the pipeline
 
@@ -363,6 +370,12 @@ successful while having silently swallowed one.
 - **A rerun with the real, unchanged input is a safe no-op** if that
   content was already loaded successfully: the loader's `content_sha256`
   check recognizes the file as already processed and adds nothing.
+  - **A source gate that prints its verdict and then sits for minutes** is
+  stuck waiting for the serverless Spark service (its driver log repeats
+  `The cluster is in unexpected state Pending`). It hasn't written
+  anything yet. Cancel the run and start it again; this is a platform
+  hiccup, so a plain retry is the right action (see
+  `evidence/proof/2026-09-25-source-gate-blocked-run.md`).
 
 ### How to verify the resulting data
 
