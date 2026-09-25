@@ -47,14 +47,33 @@ Key Features:
 
 ---
 
+### 3. NYC Mobility Pipeline Execution Dashboard
+
+Related Issue: #118
+Definition file: `11_pipeline_execution_monitoring/10_NYC_mobility_pipeline_execution_dashboard.lvdash.json`
+
+Purpose:
+- Monitor pipeline execution and run health, independent of data quality
+- Surface stuck, failed, or long-running pipeline executions
+
+Key Features:
+- Run status and duration by pipeline execution
+- Stuck-run detection
+- Execution history and trends
+
+
+---
+
 ## Dashboard Evidence and Folder Structure
 
 dashboards/
 ├── README.md
 ├── 11_data_quality_dashboard/
 │   └── 10_NYC_mobility_data_quality_dashboard.lvdash.json
-└── 11_analytics_dashboard/
-    └── 10_NYC_mobility_analytics_dashboard.lvdash.json
+├── 11_analytics_dashboard/
+│   └── 10_NYC_mobility_analytics_dashboard.lvdash.json
+└── 11_pipeline_execution_monitoring/
+    └── 10_NYC_mobility_pipeline_execution_dashboard.lvdash.json
 
 Each `.lvdash.json` is exported directly from the workspace; it is not
 edited by hand. Screenshots or other supporting evidence, if needed, go
