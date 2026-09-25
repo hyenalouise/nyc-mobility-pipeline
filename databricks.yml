@@ -490,7 +490,7 @@ resources:
       # monitoring an interval to measure against.
       #
       # Quartz syntax, not crontab: seconds first, and `?` in the day-of-month
-      # position because day-of-week is set. "30 11 * * 5" would not mean the
+      # position because day-of-week is set. "40 11 * * 5" would not mean the
       # same thing here.
       #
       # No pause_status here, deliberately. Left unset, the target decides:
@@ -498,5 +498,5 @@ resources:
       # a timer, and prod deploys it UNPAUSED. Setting it on the job would
       # override that for every target.
       schedule:
-        quartz_cron_expression: "0 30 11 ? * FRI"
+        quartz_cron_expression: "0 40 11 ? * FRI"
         timezone_id: America/New_York
