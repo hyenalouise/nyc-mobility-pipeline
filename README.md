@@ -120,6 +120,7 @@ nyc-mobility-pipeline/
 │   ├── decisions.md
 │   ├── ingestion.md
 │   ├── job_setup.md
+│   ├── monitoring_layers.md
 │   ├── naming_conventions.md
 │   ├── source_profile.md
 │   ├── source_to_target_mapping.md
@@ -509,6 +510,7 @@ review rules.
 | [`docs/validation.md`](docs/validation.md) | Required checks and acceptance evidence |
 | [`docs/decisions.md`](docs/decisions.md) | Accepted decisions and rejected alternatives |
 | [`docs/job_setup.md`](docs/job_setup.md) | How to wire the pipeline as a Databricks job, task by task |
+| [`docs/monitoring_layers.md`](docs/monitoring_layers.md) | Every monitored signal, its threshold, and the response when it trips |
 | [`docs/workflow.md`](docs/workflow.md) | How to work on this repository: Databricks Git folders, GitHub, the terminal, deploying and checking |
 | [`docs/terminal_setup.md`](docs/terminal_setup.md) | Terminal and Databricks CLI from zero, so more than one of us can deploy |
 
