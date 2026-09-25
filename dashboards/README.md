@@ -10,6 +10,23 @@ task to the appropriate validation task.
 | `11_analytics_dashboard/` | NYC Mobility Analytics Dashboard | Validated Gold and Analytics outputs | `90_validate_analytics` |
 | `11_pipeline_execution_monitoring/` | NYC Mobility Pipeline Execution Dashboard | Pipeline run and operational state | `90_validate_control`; refresh uses operational completion behavior |
 
+## Refresh dependencies
+
+```mermaid
+flowchart LR
+    gates[Source, Bronze, Silver, Integration, Gold, Analytics, and Control gates]
+    analytics_gate[90_validate_analytics]
+    control_gate[90_validate_control]
+
+    gates -->|ALL_DONE| dq[Data Quality Dashboard]
+    analytics_gate -->|only after success| analytics[Analytics Dashboard]
+    control_gate -->|ALL_DONE| monitoring[Pipeline Execution Dashboard]
+```
+
+`ALL_DONE` lets the operational dashboards refresh after either success or
+failure. The Analytics dashboard refreshes only after validated Analytics output
+is available.
+
 ## Source of truth
 
 The `.lvdash.json` files are the deployable definitions. Bundle resource names

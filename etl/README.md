@@ -9,6 +9,37 @@ Production SQL is organized in pipeline order:
 5. `05_gold/` — approved dimensions, facts, and the Gold gate
 6. `06_analytics/` — business-question datasets and the Analytics gate
 
+## Execution shape
+
+```mermaid
+flowchart TB
+    control[01 Control setup]
+
+    control --> gt_source[Green Taxi source gate]
+    control --> weather_source[Weather source gate]
+    control --> zones_source[Taxi Zones source gate]
+
+    gt_source --> gt_bronze[Green Taxi Bronze] --> gt_bronze_gate{Bronze gate} --> gt_silver[Green Taxi Silver] --> gt_silver_gate{Silver gate}
+    weather_source --> weather_bronze[Weather Bronze] --> weather_bronze_gate{Bronze gate} --> weather_silver[Weather Silver] --> weather_silver_gate{Silver gate}
+    zones_source --> zones_bronze[Taxi Zones Bronze] --> zones_bronze_gate{Bronze gate} --> zones_silver[Taxi Zones Silver] --> zones_silver_gate{Silver gate}
+
+    gt_bronze --> control_gate{Control gate}
+    weather_bronze --> control_gate
+    zones_bronze --> control_gate
+
+    gt_silver_gate --> integration[04 Integration]
+    weather_silver_gate --> integration
+    zones_silver_gate --> integration
+    control_gate --> integration
+
+    integration --> integration_gate{Integration gate}
+    integration_gate --> gold[05 Gold] --> gold_gate{Gold gate}
+    gold_gate --> analytics[06 Analytics] --> analytics_gate{Analytics gate}
+```
+
+The source lanes can advance independently through Silver. They converge only
+after every required Silver gate succeeds.
+
 The folder number indicates logical execution order. Actual runtime dependencies
 are defined in [`databricks.yml`](../databricks.yml) and documented in
 [`docs/operations/job-setup.md`](../docs/operations/job-setup.md).

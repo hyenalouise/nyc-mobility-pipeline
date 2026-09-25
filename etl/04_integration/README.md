@@ -4,6 +4,30 @@ Integration resolves accepted trips to pickup and drop-off zones and to the
 pickup weather hour. It preserves one mapping row per accepted trip and records
 unmatched or special-member outcomes explicitly.
 
+## Integration flow
+
+```mermaid
+flowchart LR
+    trips[Silver accepted trips]
+    zones[Silver Taxi Zones]
+    weather[Silver hourly weather]
+
+    trips --> zone_map[trip_zone_map]
+    zones --> zone_map
+
+    trips --> weather_map[trip_weather_map]
+    weather --> weather_map
+    zone_map -->|task order| weather_map
+
+    zone_map --> gate{Integration gate}
+    weather_map --> gate
+    gate --> gold[Gold dimensions and facts]
+```
+
+The two maps retain one row per accepted trip. Zone and weather match outcomes
+remain explicit so unmatched records can be measured instead of disappearing
+inside a join.
+
 | File | Persisted output | Purpose |
 |---|---|---|
 | `10_resolve_trip_zones.sql` | `04-integration.trip_zone_map` | Resolves pickup and drop-off zone roles with independent match statuses |

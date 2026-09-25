@@ -4,6 +4,14 @@ Gold implements the approved dimensional model. Dimensions are built before
 facts, and facts resolve foreign keys against built dimensions and validated
 Integration maps.
 
+## Dimensional model
+
+![NYC Mobility Gold star schema](../../docs/architecture/model/nyc_mobility_star_schema.png)
+
+The diagram is maintained with the canonical
+[data model](../../docs/architecture/data-model.md). It shows the two fact tables
+at their separate grains and the dimensions they share.
+
 | File | Target | Purpose |
 |---|---|---|
 | `10_dim_date.sql` | `dim_date` | NYC-local calendar members |

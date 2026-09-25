@@ -2,6 +2,22 @@
 
 Control stores operational state that must survive business-table rebuilds.
 
+## Batch lifecycle
+
+```mermaid
+flowchart LR
+    discovered[DISCOVERED] --> started[STARTED]
+    started -->|load and validation succeed| success[SUCCESS]
+    started -->|attempt does not complete| failed[FAILED]
+    failed -. retry creates a new batch_id .-> retry[STARTED: new attempt]
+    retry -->|load and validation succeed| success
+    success -. approved replacement .-> superseded[SUPERSEDED]
+```
+
+A failed attempt remains in history. Retrying creates a new batch record instead
+of rewriting the failed one, while a superseded success remains available for
+lineage.
+
 | File | Purpose |
 |---|---|
 | `00_create_control_tables.sql` | Creates `ingestion_batches`, `pipeline_runs`, `data_quality_results`, the shared `dq_status` function, and the latest `gate_status` view |

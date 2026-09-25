@@ -1,5 +1,30 @@
 # Ingestion and source-gate Python
 
+## Source-gate decision flow
+
+```mermaid
+flowchart TD
+    input[Configured source input] --> gate[source_gate.py]
+    contract[config/source_contract.json] --> gate
+    gate --> checks[DuckDB source-specific checks]
+
+    checks --> json[Compact JSON evidence]
+    checks -->|when --record-control is set| dq[01-control data_quality_results]
+    checks --> verdict{Gate verdict}
+
+    verdict -->|blocking check fails| blocked[BLOCKED: exit 1]
+    verdict -->|passes, but input differs from loader input| test[Test input: exit 4]
+    verdict -->|passes and input matches loader input| accepted[ACCEPTED: exit 0]
+
+    blocked --> skipped[Bronze loader is skipped]
+    test --> skipped
+    accepted --> bronze[Matching Bronze loader may run]
+```
+
+Invalid configuration and unavailable input use their documented nonzero exit
+codes before a delivery can advance. See the linked source-gate reference for
+the complete exit-code contract.
+
 ## Active module
 
 | Module | Status | Purpose |
